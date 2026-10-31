@@ -1,12 +1,14 @@
 {
-    "name": "uams-web/statamic-addon-template",
-    "description": "Starting point for UAMS Statamic add-ons. Replace this description when you start an add-on from it.",
+    "name": "uams-web/aether-listings-management",
+    "description": "ListingsManagement: Google Business Profile listing sync for UAMS Statamic sites.",
     "keywords": [
         "statamic",
-        "statamic-addon"
+        "statamic-addon",
+        "google-business-profile",
+        "listings"
     ],
     "type": "statamic-addon",
-    "homepage": "https://github.com/UAMS-Web/statamic-addon-template",
+    "homepage": "https://github.com/UAMS-Web/aether-listings-management",
     "authors": [
         {
             "name": "UAMS Web Services"
@@ -17,27 +19,27 @@
         }
     ],
     "support": {
-        "issues": "https://github.com/UAMS-Web/statamic-addon-template/issues",
-        "source": "https://github.com/UAMS-Web/statamic-addon-template"
+        "issues": "https://github.com/UAMS-Web/aether-listings-management/issues",
+        "source": "https://github.com/UAMS-Web/aether-listings-management"
     },
     "autoload": {
         "psr-4": {
-            "UAMSWeb\\AddonTemplate\\": "src/"
+            "UAMSWeb\\Aether\\People\\ListingsManagement\\": "src/"
         }
     },
     "autoload-dev": {
         "psr-4": {
-            "UAMSWeb\\AddonTemplate\\Tests\\": "tests/"
+            "UAMSWeb\\Aether\\People\\ListingsManagement\\Tests\\": "tests/"
         }
     },
     "extra": {
         "statamic": {
-            "name": "Addon Template",
-            "description": "Replace this description when you start an add-on from the template."
+            "name": "ListingsManagement",
+            "description": "Google Business Profile listing sync."
         },
         "laravel": {
             "providers": [
-                "UAMSWeb\\AddonTemplate\\ServiceProvider"
+                "UAMSWeb\\Aether\\People\\ListingsManagement\\ServiceProvider"
             ]
         },
         "composer-exit-on-patch-failure": true
