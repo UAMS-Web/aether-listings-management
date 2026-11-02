@@ -1,5 +1,5 @@
 {
-    "name": "statamic-addon-template",
+    "name": "aether-listings-management",
     "private": true,
     "type": "module",
     "engines": {
