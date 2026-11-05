@@ -15,6 +15,14 @@ name: CI
 # Job names must stay unique across all workflows in this repository.
 # `check-required-checks.yml` compares the two lists and reports drift; see its header for the
 # order in which a job and its ruleset entry change.
+#
+# THE AGGREGATE. The last job, `CI`, `needs:` every other job in this file, runs `if: always()`,
+# and fails unless each one succeeded (a `skipped` or `cancelled` job fails it too). A ruleset
+# that requires the one context `CI` therefore never lists a job by name. The `needs:` list
+# and the jobs change together: add, rename or remove a job and the `CI` job's `needs:` list
+# changes in the same pull request. The `Aggregate needs` job (`check-aggregate-needs.mjs`)
+# fails, naming the job, when a job is missing from that list. A job that is deliberately not
+# aggregated is listed with a reason in `.github/aggregate-needs-allow.json`.
 
 on:
   pull_request:
@@ -116,6 +124,21 @@ jobs:
             echo "::error::resources/dist differs from a fresh build. Run npm run build and commit the result."
             exit 1
           fi
+
+  aggregate-needs:
+    name: Aggregate needs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+
+      # Fails, naming the job, when a job is missing from the `needs:` list of `CI` or a fixed
+      # required name is reported by no job. Allow-list: .github/aggregate-needs-allow.json.
+      - run: node .claude/skills/code-quality/scripts/check-aggregate-needs.mjs
 
   mutate-ignore:
     name: Mutation annotations (none inert)
@@ -223,3 +246,39 @@ jobs:
 
       - run: composer stan
       - run: composer test
+
+  # The one check a ruleset requires from this workflow. Keep `needs:` listing every other job
+  # in this file; the `Aggregate needs` job fails when one is missing.
+  ci:
+    name: CI
+    needs:
+      - composer-validate
+      - no-emoji
+      - scripts
+      - built-assets
+      - aggregate-needs
+      - mutate-ignore
+      - parallel-safe
+      - pint
+      - rector
+      - phpstan
+      - pest
+      - compatibility
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # `skipped` and `cancelled` fail as well as `failure`: a job that did not run proved nothing.
+      - name: Every needed job succeeded
+        env:
+          RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "Needed job results: $RESULTS"
+          # An empty list (an emptied `needs:`, a dropped `env:`) would run no iterations and pass having read nothing.
+          if [ -z "$RESULTS" ]; then echo "::error::No needed job results to read"; exit 1; fi
+          for result in $RESULTS; do
+            if [ "$result" != "success" ]; then
+              echo "::error::A needed job reported $result"
+              exit 1
+            fi
+          done
