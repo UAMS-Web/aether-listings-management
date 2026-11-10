@@ -39,3 +39,4 @@ class ServiceProvider extends AddonServiceProvider
         // Register the add-on's behavior here
     }
 }
+
