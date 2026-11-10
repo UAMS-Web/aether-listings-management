@@ -54,6 +54,6 @@ class ServiceProvider extends AddonServiceProvider
      */
     public function bootAddon(): void
     {
-        // Register the behavior of the add-on here
+        // Register the add-on's behavior here
     }
 }
