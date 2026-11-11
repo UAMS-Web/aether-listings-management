@@ -14,7 +14,12 @@ name: CI
 #   platforms; that is a separate decision from this file. `mutate-paths` is the path the
 #   `mutate` job selects changed PHP files from.
 # - The chain's checks report as `checks / <job name> (<operating system>)`.
-# - This file has no `schedule:` trigger: the weekly full mutation pass is its own ticket.
+# - The weekly `schedule:` trigger runs the full mutation pass. On a `schedule` or `workflow_dispatch`
+#   event the chain's `mutate` job mutates everything `composer mutate` covers, under the chain's
+#   `mutate-full-timeout-minutes` (default 180, left unset here), while a pull request or a push keeps
+#   the 45-minute cap and mutates only the changed files. The scheduled run catches decay that no pull
+#   request touches, such as a dependency or tooling change. GitHub runs a schedule from the default
+#   branch's copy of this file.
 #
 # REQUIRED CHECKS. The repository's ruleset requires three contexts: `CI`, `Attribution footer`
 # and `Closing keywords`. `CI` is the last job in this file; it `needs:` the call and every plain
@@ -33,6 +38,10 @@ on:
     branches: [main]
   # Lets the workflow be run on demand against a branch.
   workflow_dispatch:
+  # The weekly full mutation pass: Monday 07:17 UTC (01:17 Central), off the hour so scheduled runs
+  # across the organization do not all start together.
+  schedule:
+    - cron: '17 7 * * 1'
 
 # A new push to a pull request cancels that pull request's stale run.
 concurrency:
