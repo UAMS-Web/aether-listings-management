@@ -22,3 +22,17 @@ it('lists its service provider in composer.json so the host discovers it', funct
     // Expect the provider among the discovered providers
     expect($manifest['extra']['laravel']['providers'])->toContain(ServiceProvider::class);
 });
+
+it('suggests aether-people rather than requiring it', function (): void {
+    // Read composer.json and confirm it was readable
+    $contents = file_get_contents(__DIR__.'/../../composer.json');
+    expect($contents)->toBeString();
+
+    // Decode the manifest
+    /** @var array{require: array<string, string>, suggest?: array<string, string>} $manifest */
+    $manifest = json_decode((string) $contents, true, flags: JSON_THROW_ON_ERROR);
+
+    // Expect aether-people suggested, and absent from the hard requirements
+    expect($manifest['suggest'] ?? [])->toHaveKey('uams-web/aether-people')
+        ->and($manifest['require'])->not->toHaveKey('uams-web/aether-people');
+});
