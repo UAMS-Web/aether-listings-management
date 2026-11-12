@@ -30,3 +30,7 @@ php artisan vendor:publish --tag=aether-listings-management-config
 ## Namespace
 
 `aether-people` owns `UAMSWeb\Aether\People\`, and this add-on's `UAMSWeb\Aether\People\ListingsManagement\` nests inside it. Each add-on maps its own prefix to its own `src/`, so this package's `src/` holds no code that belongs to `aether-people`, and `aether-people` keeps no `src/ListingsManagement` directory.
+
+## License
+
+MIT. See [`LICENSE`](LICENSE).

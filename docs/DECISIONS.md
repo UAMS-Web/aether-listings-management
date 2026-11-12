@@ -35,3 +35,13 @@ Oldest first, one entry per closed decision, so **a new entry is appended to the
 **Rejected.** Snapshotting the synced files into the template: every new add-on would begin with a stale copy that conflicts with its first sync pull request. Copying a license from an existing add-on: legal has not decided which license applies.
 
 **Companion.** `UAMS-Web/uams-statamic#261`.
+
+## 2026-11-12: The add-on goes to Packagist on MIT, ahead of UAMS legal's decision (repository setup)
+
+**Decision.** The operator decided on 2026-11-12 that `uams-web/aether-listings-management` is published on Packagist and licensed MIT (`LICENSE`, `"license": "MIT"`), following `UAMS-Web/aether-redirects`, ahead of `UAMS-Web/uams-statamic#261`. The package is listed and tagged (`v0.1.0`, `v0.1.1`, `v0.1.2`). The Marketplace is not part of this decision.
+
+**Why.** A public Packagist package needs a declared license, and a host site requires the add-on by Composer name rather than by path. Matching the sibling add-ons keeps one license across them, and the file can change if UAMS legal decides otherwise.
+
+**Rejected.** Waiting for UAMS legal before declaring a license: the package is already listed and cannot be used publicly without one. Requiring the add-on from a path repository: it ties a site to one machine's checkout.
+
+**Companion.** `UAMS-Web/aether-listings-management#39`, `UAMS-Web/uams-statamic#261`.
