@@ -59,6 +59,9 @@
         "php": "^8.4",
         "statamic/cms": "^6.35"
     },
+    "suggest": {
+        "uams-web/aether-people": "Provides the people collection and the clinical provider layer whose entries the listing sync reads."
+    },
     "require-dev": {
         "cweagans/composer-patches": "^2.0",
         "driftingly/rector-laravel": "^2.6",

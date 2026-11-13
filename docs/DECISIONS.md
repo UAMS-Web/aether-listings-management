@@ -45,3 +45,13 @@ Oldest first, one entry per closed decision, so **a new entry is appended to the
 **Rejected.** Waiting for UAMS legal before declaring a license: the package is already listed and cannot be used publicly without one. Requiring the add-on from a path repository: it ties a site to one machine's checkout.
 
 **Companion.** `UAMS-Web/aether-listings-management#39`, `UAMS-Web/uams-statamic#261`.
+
+## 2026-11-12: `aether-people` is suggested, and the add-on is Business Profile only (UAMS-Web/uams-statamic#418)
+
+**Decision.** `composer.json` suggests `uams-web/aether-people` and does not require it: the add-on reads provider and location entries through collection handles set in its config, and calls no `aether-people` class. The add-on syncs to Google Business Profile only and defines no destination interface for other listing directories.
+
+**Why.** The sync needs entries, not the package that defines them. Reading through configured handles keeps the add-on installable while the people collection still lives in the site (`UAMS-Web/uams-statamic#281` moves it), lets the two add-ons release on their own schedules, and keeps every handle unchanged. One destination exists, so an interface drawn from it would only describe Business Profile; Doximity and MyChart feeds are out of scope for the epic.
+
+**Rejected.** Requiring `aether-people`: it would install the whole people layer for a sync that only reads entries, tie each release of this add-on to one of that add-on, and fail on a site whose people collection has not moved yet. A destination interface now: an abstraction with one implementation fixes its shape before a second destination shows what the shape must be; it can be extracted when a ticket adds one.
+
+**Companion.** `UAMS-Web/uams-statamic#419`, `UAMS-Web/uams-statamic#418`.
