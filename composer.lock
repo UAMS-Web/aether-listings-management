@@ -1152,16 +1152,16 @@
         },
         {
             "name": "guzzlehttp/psr7",
-            "version": "2.13.2",
+            "version": "2.13.3",
             "source": {
                 "type": "git",
                 "url": "https://github.com/guzzle/psr7.git",
-                "reference": "adee536f95101929f262b8c59e8a61472f347d58"
+                "reference": "6d3cd8285a97eaa352956a4ada92fa03ecce1c4e"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/guzzle/psr7/zipball/adee536f95101929f262b8c59e8a61472f347d58",
-                "reference": "adee536f95101929f262b8c59e8a61472f347d58",
+                "url": "https://api.github.com/repos/guzzle/psr7/zipball/6d3cd8285a97eaa352956a4ada92fa03ecce1c4e",
+                "reference": "6d3cd8285a97eaa352956a4ada92fa03ecce1c4e",
                 "shasum": ""
             },
             "require": {
@@ -1251,7 +1251,7 @@
             ],
             "support": {
                 "issues": "https://github.com/guzzle/psr7/issues",
-                "source": "https://github.com/guzzle/psr7/tree/2.13.2"
+                "source": "https://github.com/guzzle/psr7/tree/2.13.3"
             },
             "funding": [
                 {
@@ -1267,7 +1267,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-10-17T23:49:46+00:00"
+            "time": "2026-11-12T15:57:42+00:00"
         },
         {
             "name": "guzzlehttp/uri-template",
@@ -10225,16 +10225,16 @@
         },
         {
             "name": "laravel/pint",
-            "version": "v1.32.1",
+            "version": "v1.32.2",
             "source": {
                 "type": "git",
                 "url": "https://github.com/laravel/pint.git",
-                "reference": "006bd7825eb01daf92959d060b89cd9514fe4253"
+                "reference": "35f43b86c3aa960b3167ad147ff8308fb30766c4"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/laravel/pint/zipball/006bd7825eb01daf92959d060b89cd9514fe4253",
-                "reference": "006bd7825eb01daf92959d060b89cd9514fe4253",
+                "url": "https://api.github.com/repos/laravel/pint/zipball/35f43b86c3aa960b3167ad147ff8308fb30766c4",
+                "reference": "35f43b86c3aa960b3167ad147ff8308fb30766c4",
                 "shasum": ""
             },
             "require": {
@@ -10245,15 +10245,15 @@
                 "php": "^8.3.0"
             },
             "require-dev": {
-                "composer/semver": "^3.4.4",
-                "friendsofphp/php-cs-fixer": "^3.95.25",
-                "illuminate/view": "^13.31.0",
-                "larastan/larastan": "^3.11.0",
+                "composer/semver": "^3.6.0",
+                "friendsofphp/php-cs-fixer": "^3.95.30",
+                "illuminate/view": "^13.42.0",
+                "larastan/larastan": "^3.14.0",
                 "laravel-zero/framework": "^13.0.0",
-                "laravel/agent-detector": "^2.0.2",
-                "laravel/prompts": "^0.3.24",
+                "laravel/agent-detector": "^2.0.5",
+                "laravel/prompts": "^0.3.27",
                 "mockery/mockery": "^1.6.15",
-                "nunomaduro/termwind": "^2.4.0",
+                "nunomaduro/termwind": "^2.4.1",
                 "pestphp/pest": "^4.7.8"
             },
             "bin": [
@@ -10291,7 +10291,7 @@
                 "issues": "https://github.com/laravel/pint/issues",
                 "source": "https://github.com/laravel/pint"
             },
-            "time": "2026-09-10T10:47:55+00:00"
+            "time": "2026-11-10T16:21:10+00:00"
         },
         {
             "name": "laravel/tinker",
@@ -13656,26 +13656,31 @@
         },
         {
             "name": "uams-web/patches-orchestra-testbench-core",
-            "version": "v1.0.0",
+            "version": "v1.1.0",
             "source": {
                 "type": "git",
                 "url": "https://github.com/UAMS-Web/patches-orchestra-testbench-core.git",
-                "reference": "a2e4cbf20079a8231c1435477ce4ac00135f75c9"
+                "reference": "c38baffd1664dcba43d6baf67cc22e038a706472"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/UAMS-Web/patches-orchestra-testbench-core/zipball/a2e4cbf20079a8231c1435477ce4ac00135f75c9",
-                "reference": "a2e4cbf20079a8231c1435477ce4ac00135f75c9",
+                "url": "https://api.github.com/repos/UAMS-Web/patches-orchestra-testbench-core/zipball/c38baffd1664dcba43d6baf67cc22e038a706472",
+                "reference": "c38baffd1664dcba43d6baf67cc22e038a706472",
                 "shasum": ""
             },
             "require": {
+                "laravel/framework": "^13.42.0",
                 "orchestra/testbench-core": "11.6.0"
             },
             "type": "library",
             "extra": {
                 "patches": {
                     "orchestra/testbench-core": {
-                        "Give each parallel test worker its own service manifest (temporary; see UAMS-Web/patches-orchestra-testbench-core#1)": "vendor/uams-web/patches-orchestra-testbench-core/patches/testbench-parallel-services-manifest.patch"
+                        "Give each parallel test worker its own service manifest (temporary; see UAMS-Web/patches-orchestra-testbench-core#1)": "vendor/uams-web/patches-orchestra-testbench-core/patches/testbench-parallel-services-manifest.patch",
+                        "Give each parallel test worker its own package manifest under Pest (temporary; see UAMS-Web/patches-orchestra-testbench-core#5)": "vendor/uams-web/patches-orchestra-testbench-core/patches/testbench-parallel-packages-manifest.patch"
+                    },
+                    "laravel/framework": {
+                        "Tolerate a lost facade stub rename on Windows (temporary; see UAMS-Web/patches-orchestra-testbench-core#6)": "vendor/uams-web/patches-orchestra-testbench-core/patches/laravel-facade-stub-rename.patch"
                     }
                 }
             },
@@ -13692,7 +13697,7 @@
                 "issues": "https://github.com/UAMS-Web/patches-orchestra-testbench-core/issues",
                 "source": "https://github.com/UAMS-Web/patches-orchestra-testbench-core"
             },
-            "time": "2026-11-11T23:07:21+00:00"
+            "time": "2026-11-13T20:06:04+00:00"
         },
         {
             "name": "uams-web/patches-pest-plugin-mutate",
