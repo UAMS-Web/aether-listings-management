@@ -341,6 +341,22 @@ it('excludes a provider who excludes themself, or at a location that excludes it
         ->and($self[0]->excluded)->toBeTrue();
 });
 
+it('excludes a provider at a location whose providers toggle is on, through the shipped mapping', function (): void {
+    // The same provider at a location with the toggle on, off, and never saved
+    $on = locationEntry('on-clinic', 'On Clinic', ['google_business_profile_exclude_providers_query' => true]);
+    $off = locationEntry('off-clinic', 'Off Clinic', ['google_business_profile_exclude_providers_query' => false]);
+    $items = mapper()->providerItems(personEntry(), [$on, $off, locationEntry()], mapperSilos());
+
+    expect(array_map(fn (SyncItem $item): string => $item->storeCode, $items))->toBe(['jane-doe_on-clinic', 'jane-doe_off-clinic', 'jane-doe_west-clinic'])
+        ->and(array_map(fn (SyncItem $item): bool => $item->excluded, $items))->toBe([true, false, false]);
+});
+
+it('excludes no location itself for its providers toggle', function (): void {
+    $location = locationEntry(values: ['google_business_profile_exclude_providers_query' => true]);
+
+    expect(mapper()->locationItem($location, mapperSilos())->excluded)->toBeFalse();
+});
+
 it('does not exclude a provider at a location that excludes only itself', function (): void {
     $items = mapper()->providerItems(personEntry(), [locationEntry(values: ['google_business_profile_exclude_query' => true])], mapperSilos());
 

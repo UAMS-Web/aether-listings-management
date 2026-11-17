@@ -76,8 +76,7 @@ return [
             'description' => ['short_desc', 'about'],
             'prefix' => 'google_business_profile_prefix_query',
             'exclude' => 'google_business_profile_exclude_query',
-            // No field on the location blueprint excludes a location's providers yet
-            'exclude_providers' => null,
+            'exclude_providers' => 'google_business_profile_exclude_providers_query',
             'brand_query' => 'brand_organization_query',
             'brand' => 'brand_organization',
             // Radio fields answering true, false or not applicable => Business Profile attribute
