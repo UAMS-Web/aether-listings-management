@@ -1,0 +1,37 @@
+{
+    "_comment": [
+        "A fixed content snapshot and the store codes on the listings it should match.",
+        "Synthetic: the Statamic site holds no clinical_locations entries yet, and the live",
+        "listings need the Google credentials to read. The shapes follow the WordPress sync's",
+        "rules: a location is its slug or parent_child, a provider is person_location with the",
+        "location's own slug. The last two existing codes and the last generated one are",
+        "deliberate differences, each with the cause the comparison must name."
+    ],
+    "locations": [
+        {"slug": "west-clinic", "title": "West Clinic"},
+        {"slug": "main-campus", "title": "Main Campus"},
+        {"slug": "cardiology", "title": "Cardiology", "parent": "main-campus"},
+        {"slug": "orthopaedic-surgery", "title": "Orthopaedic Surgery", "parent": "main-campus"},
+        {"slug": "new-clinic", "title": "New Clinic"}
+    ],
+    "people": [
+        {"slug": "jane-doe", "locations": ["west-clinic", "cardiology"]},
+        {"slug": "john-roe", "locations": ["main-campus"]}
+    ],
+    "existing": [
+        "west-clinic",
+        "main-campus",
+        "main-campus_cardiology",
+        "jane-doe_west-clinic",
+        "jane-doe_cardiology",
+        "john-roe_main-campus",
+        "main-campus_orthopaedic-surgery-and-sports-medicine",
+        "Old-Clinic"
+    ],
+    "differences": [
+        {"store_code": "main-campus_orthopaedic-surgery", "side": "generated", "cause": "a slug is cut short against main-campus_orthopaedic-surgery-and-sports-medicine"},
+        {"store_code": "new-clinic", "side": "generated", "cause": "no listing carries it, so the sync would create one"},
+        {"store_code": "Old-Clinic", "side": "existing", "cause": "no content generates it, so the sync never updates that listing"},
+        {"store_code": "main-campus_orthopaedic-surgery-and-sports-medicine", "side": "existing", "cause": "a slug is cut short against main-campus_orthopaedic-surgery"}
+    ]
+}
