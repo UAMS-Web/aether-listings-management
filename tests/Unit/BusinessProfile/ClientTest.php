@@ -345,3 +345,33 @@ it('sends a value with bytes that are not UTF-8 with a replacement character ins
 
     expect(json_decode((string) $transport->apiRequests()[0]['body'], true))->toBe(['title' => "Caf\u{FFFD}"]);
 });
+
+it('fails when Google hands back a page token a second time', function (): void {
+    // Every page points at the same next page; past a few pages the fake stops, so a broken guard ends the test instead of hanging it
+    $served = 0;
+    $transport = new FakeTransport(function (string $method, string $url) use (&$served): ?HttpResponse {
+        if (! str_contains($url, '/categories')) {
+            return null;
+        }
+
+        return FakeTransport::json(['categories' => [], 'nextPageToken' => ++$served < 5 ? 'again' : '']);
+    });
+
+    expect(fn (): array => clientWith($transport)->categories())->toThrow(ApiException::class, 'the page token for https://mybusinessbusinessinformation.googleapis.com/v1/categories came back a second time')
+        ->and($transport->apiRequests())->toHaveCount(2);
+});
+
+it('reads at most the page limit, and fails past it', function (): void {
+    // Every page points at a new next page; past the limit the fake stops, so a broken limit ends the test instead of hanging it
+    $served = 0;
+    $transport = new FakeTransport(function (string $method, string $url) use (&$served): ?HttpResponse {
+        if (! str_contains($url, '/categories')) {
+            return null;
+        }
+
+        return FakeTransport::json(['categories' => [], 'nextPageToken' => ++$served < Client::MAX_PAGES + 10 ? 'p'.$served : '']);
+    });
+
+    expect(fn (): array => clientWith($transport)->categories())->toThrow(ApiException::class, 'Google API GET failed: https://mybusinessbusinessinformation.googleapis.com/v1/categories ran past 1000 pages')
+        ->and($transport->apiRequests())->toHaveCount(Client::MAX_PAGES);
+});

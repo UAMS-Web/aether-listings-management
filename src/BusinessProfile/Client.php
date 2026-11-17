@@ -27,6 +27,9 @@ final class Client
     /** Where the account groups are listed. */
     private const string ACCOUNTS_URL = 'https://mybusinessaccountmanagement.googleapis.com/v1/accounts';
 
+    /** The most pages one list is read to: 100,000 listings at 100 a page. */
+    public const int MAX_PAGES = 1000;
+
     /** The fields read back from a listing for the comparison. */
     public const string READ_MASK = 'name,storeCode,title,storefrontAddress,latlng,phoneNumbers,websiteUri,categories,profile,metadata,openInfo';
 
@@ -290,23 +293,39 @@ final class Client
     /**
      * Every item of a paged list, following `nextPageToken` to the end.
      *
+     * A token Google hands back a second time, or a list longer than
+     * self::MAX_PAGES pages, is a failure rather than a loop that never ends.
+     *
      * @param  string  $url  The list URL.
      * @param  array<string, scalar>  $query  The query for every page.
      * @param  string  $key  The key the items are under.
      * @return list<array<array-key, mixed>>
+     *
+     * @throws ApiException When a page token repeats or the pages run past the limit.
      */
     private function pages(string $url, array $query, string $key): array
     {
         $items = [];
         $page = '';
+        $seen = [];
 
         do {
             // Ask for the next page, if there is a token for one
             $data = $this->request('GET', $url, $query + ($page !== '' ? ['pageToken' => $page] : []));
             array_push($items, ...Values::arrays($data[$key] ?? null));
             $page = Values::str($data['nextPageToken'] ?? null);
-        } while ($page !== '');
 
-        return $items;
+            if ($page === '') {
+                return $items;
+            }
+
+            if (in_array($page, $seen, true)) {
+                throw new ApiException('Google API GET failed: the page token for '.$url.' came back a second time');
+            }
+
+            $seen[] = $page;
+        } while (count($seen) < self::MAX_PAGES);
+
+        throw new ApiException('Google API GET failed: '.$url.' ran past '.self::MAX_PAGES.' pages');
     }
 }
