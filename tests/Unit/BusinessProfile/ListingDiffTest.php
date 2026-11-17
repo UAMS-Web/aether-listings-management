@@ -1,0 +1,133 @@
+<?php
+
+declare(strict_types=1);
+
+use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\ListingDiff;
+
+/**
+ * Which fields and attributes differ from the live listing, and the mask that names them.
+ *
+ * @command  vendor/bin/pest tests/Unit/BusinessProfile/ListingDiffTest.php
+ */
+
+/**
+ * Fields stating every owned field.
+ *
+ * @return array<string, mixed>
+ */
+function diffFields(): array
+{
+    return [
+        'title' => 'Clinic',
+        'storefrontAddress' => ['regionCode' => 'US', 'languageCode' => 'en', 'postalCode' => '72205', 'administrativeArea' => 'AR', 'locality' => 'Little Rock', 'addressLines' => ['4301 W Markham St', 'Suite 100']],
+        'latlng' => ['latitude' => 34.7500012, 'longitude' => -92.3200049],
+        'phoneNumbers' => ['primaryPhone' => '+15016868000'],
+        'websiteUri' => 'https://example.test/clinic/',
+        'categories' => ['primaryCategory' => ['name' => 'categories/gcid:a'], 'additionalCategories' => [['name' => 'categories/gcid:b'], ['name' => 'categories/gcid:c']]],
+        'profile' => ['description' => 'About the clinic.'],
+    ];
+}
+
+it('finds no change across formatting differences', function (): void {
+    // The same values as Google formats them
+    $live = [
+        'title' => ' Clinic ',
+        'storefrontAddress' => ['regionCode' => 'US', 'postalCode' => '72205 ', 'administrativeArea' => 'AR', 'locality' => 'Little Rock', 'addressLines' => [' 4301 W Markham St', 'Suite 100 ']],
+        'latlng' => ['latitude' => 34.750004, 'longitude' => -92.320001],
+        'phoneNumbers' => ['primaryPhone' => '(501) 686-8000'],
+        'websiteUri' => 'https://example.test/clinic/',
+        'categories' => ['primaryCategory' => ['name' => 'categories/gcid:a', 'displayName' => 'A'], 'additionalCategories' => [['name' => 'categories/gcid:c'], ['name' => 'categories/gcid:b']]],
+        'profile' => ['description' => 'About the clinic. '],
+    ];
+
+    expect(ListingDiff::changedFields(diffFields(), $live))->toBe([]);
+});
+
+it('reports each differing field on its own, with its desired value', function (string $field, mixed $live): void {
+    // A listing matching in everything but one field
+    $listing = array_replace(diffFields(), [$field => $live]);
+
+    expect(ListingDiff::changedFields(diffFields(), $listing))->toBe([$field => diffFields()[$field]]);
+})->with([
+    'title' => ['title', 'Old Clinic'],
+    'address line' => ['storefrontAddress', ['postalCode' => '72205', 'administrativeArea' => 'AR', 'locality' => 'Little Rock', 'addressLines' => ['4301 W Markham St']]],
+    'postal code' => ['storefrontAddress', ['postalCode' => '72204', 'administrativeArea' => 'AR', 'locality' => 'Little Rock', 'addressLines' => ['4301 W Markham St', 'Suite 100']]],
+    'city' => ['storefrontAddress', ['postalCode' => '72205', 'administrativeArea' => 'AR', 'locality' => 'Conway', 'addressLines' => ['4301 W Markham St', 'Suite 100']]],
+    'state' => ['storefrontAddress', ['postalCode' => '72205', 'administrativeArea' => 'TX', 'locality' => 'Little Rock', 'addressLines' => ['4301 W Markham St', 'Suite 100']]],
+    'latitude' => ['latlng', ['latitude' => 34.76, 'longitude' => -92.3200049]],
+    'longitude' => ['latlng', ['latitude' => 34.7500012, 'longitude' => -92.33]],
+    'phone' => ['phoneNumbers', ['primaryPhone' => '(501) 686-8001']],
+    'website' => ['websiteUri', 'https://example.test/old/'],
+    'primary category' => ['categories', ['primaryCategory' => ['name' => 'categories/gcid:z'], 'additionalCategories' => [['name' => 'categories/gcid:b'], ['name' => 'categories/gcid:c']]]],
+    'additional category' => ['categories', ['primaryCategory' => ['name' => 'categories/gcid:a'], 'additionalCategories' => [['name' => 'categories/gcid:b']]]],
+    'description' => ['profile', ['description' => 'Old text.']],
+]);
+
+it('counts a field missing from the live listing as a change', function (): void {
+    $live = diffFields();
+    unset($live['websiteUri']);
+
+    expect(ListingDiff::changedFields(diffFields(), $live))->toBe(['websiteUri' => 'https://example.test/clinic/']);
+});
+
+it('never touches a field the content does not state, or one the sync does not own', function (): void {
+    // The content states only a title; the listing has more, including hours
+    $changed = ListingDiff::changedFields(['title' => 'Clinic', 'regularHours' => ['x']], ['title' => 'Old', 'websiteUri' => 'https://example.test/', 'regularHours' => ['y']]);
+
+    expect($changed)->toBe(['title' => 'Clinic'])
+        ->and(ListingDiff::updateMask(['regularHours' => [], 'profile' => [], 'title' => 'x']))->toBe('title,profile');
+});
+
+it('names the changed fields in the owned order in the mask', function (): void {
+    expect(ListingDiff::updateMask(['profile' => [], 'categories' => [], 'title' => 'x', 'latlng' => []]))->toBe('title,latlng,categories,profile')
+        ->and(ListingDiff::updateMask([]))->toBe('');
+});
+
+it('reduces a phone number to its digits without the United States country code', function (string $phone, string $expected): void {
+    expect(ListingDiff::normalizePhone($phone))->toBe($expected);
+})->with([
+    'E.164' => ['+15016868000', '5016868000'],
+    'national' => ['(501) 686-8000', '5016868000'],
+    'with a leading 1' => ['1-501-686-8000', '5016868000'],
+    'ten digits starting with 1 stay' => ['1501686800', '1501686800'],
+    'eleven digits not starting with 1 stay' => ['25016868000', '25016868000'],
+    'empty' => ['', ''],
+]);
+
+it('reports the attributes that are missing or differ, and not the ones that match', function (): void {
+    $changed = ListingDiff::changedAttributes(
+        ['has_restroom' => true, 'requires_appointments' => false, 'has_video_visits' => true],
+        ['has_restroom' => true, 'requires_appointments' => true],
+    );
+
+    expect($changed)->toBe(['requires_appointments' => false, 'has_video_visits' => true])
+        ->and(ListingDiff::changedAttributes(['has_restroom' => false], ['has_restroom' => false]))->toBe([]);
+});
+
+it('compares later fields when the content does not state an earlier one', function (): void {
+    $desired = diffFields();
+    unset($desired['title']);
+
+    expect(ListingDiff::changedFields($desired, array_replace(diffFields(), ['title' => 'Other', 'profile' => ['description' => 'Old.']])))->toBe(['profile' => ['description' => 'About the clinic.']]);
+});
+
+it('counts a phone the listing lacks as a change even when the content gives an empty one', function (): void {
+    expect(ListingDiff::changedFields(['phoneNumbers' => ['primaryPhone' => '']], []))->toBe(['phoneNumbers' => ['primaryPhone' => '']]);
+});
+
+it('compares coordinates to five places, and city and state without surrounding space', function (): void {
+    $live = array_replace(diffFields(), ['storefrontAddress' => ['postalCode' => '72205', 'administrativeArea' => ' AR ', 'locality' => ' Little Rock ', 'addressLines' => ['4301 W Markham St', 'Suite 100']]]);
+
+    expect(ListingDiff::changedFields(diffFields(), $live))->toBe([])
+        ->and(array_keys(ListingDiff::changedFields(['latlng' => ['latitude' => 34.75001, 'longitude' => -92.32]], ['latlng' => ['latitude' => 34.75002, 'longitude' => -92.32]])))->toBe(['latlng'])
+        ->and(array_keys(ListingDiff::changedFields(['latlng' => ['latitude' => 34.75, 'longitude' => -92.32001]], ['latlng' => ['latitude' => 34.75, 'longitude' => -92.32002]])))->toBe(['latlng']);
+});
+
+it('compares additional categories by name alone, and counts a different name as a change', function (): void {
+    $desired = ['categories' => ['primaryCategory' => ['name' => 'categories/gcid:a'], 'additionalCategories' => [['name' => 'categories/gcid:b'], ['name' => 'categories/gcid:c']]]];
+    $sameWithLabels = ['categories' => ['primaryCategory' => ['name' => 'categories/gcid:a'], 'additionalCategories' => [['name' => 'categories/gcid:b', 'displayName' => 'B'], ['name' => 'categories/gcid:c', 'displayName' => 'C']]]];
+    $otherName = ['categories' => ['primaryCategory' => ['name' => 'categories/gcid:a'], 'additionalCategories' => [['name' => 'categories/gcid:b'], ['name' => 'categories/gcid:x']]]];
+
+    expect(ListingDiff::changedFields($desired, $sameWithLabels))->toBe([])
+        ->and(array_keys(ListingDiff::changedFields($desired, $otherName)))->toBe(['categories']);
+});
