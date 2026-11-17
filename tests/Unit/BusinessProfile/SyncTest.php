@@ -417,3 +417,20 @@ it('reads every listing of the given account groups into the index', function ()
     ])
         ->and($index->find(''))->toBe([]);
 });
+
+it('sends a second item for a store code Google created without a name to review, and calls nothing', function (): void {
+    $run = runSync([syncItem(), syncItem(fields: syncFields('New'))]);
+    [$create, $second] = $run['outcomes'];
+
+    expect($create->action)->toBe(Action::Create)
+        ->and($second->action)->toBe(Action::Review)
+        ->and($second->reason)->toBe('Store code is on a listing Google created without a name')
+        ->and($run['transport']->apiRequests())->toHaveCount(1);
+});
+
+it('logs an excluded item even when its silo is off', function (): void {
+    $run = runSync([syncItem(excluded: true)], modes: ['main' => 'off']);
+
+    expect($run['outcomes'][0]->reason)->toBe('Excluded from Google Business Profile by the content')
+        ->and($run['log'])->toHaveCount(1);
+});

@@ -117,10 +117,16 @@ final class Client
             $headers['Content-Type'] = 'application/json';
         }
 
-        $response = $this->transport->send($method, $url, $headers, $body === null ? null : json_encode($body, JSON_THROW_ON_ERROR));
-        $data = Values::arr(json_decode($response->body, true));
+        $response = $this->transport->send($method, $url, $headers, $body === null ? null : json_encode($body, JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE));
+        $decoded = json_decode($response->body, true);
+        $data = Values::arr($decoded);
 
         if ($response->status >= 200 && $response->status <= 299) {
+            // A reply that is not JSON is a failure, never an empty page: an empty page of listings would lead to creates
+            if ($response->body !== '' && ! is_array($decoded)) {
+                throw new ApiException('Google API '.$method.' failed ('.$response->status.'): the reply is not JSON');
+            }
+
             return $data;
         }
 

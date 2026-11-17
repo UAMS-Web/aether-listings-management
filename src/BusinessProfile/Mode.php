@@ -27,4 +27,20 @@ enum Mode: string
 
         return $mode === self::Live && ! $isProduction ? self::DryRun : $mode;
     }
+
+    /**
+     * Whether the host a run is on is the production host.
+     *
+     * An empty production host means none is configured, so no host is
+     * production and no silo writes. Host names compare without letter case.
+     *
+     * @param  string  $host  The host the run is on, as the application's URL names it.
+     * @param  string  $productionHost  The configured production host.
+     */
+    public static function isProductionHost(string $host, string $productionHost): bool
+    {
+        $productionHost = trim($productionHost);
+
+        return $productionHost !== '' && strcasecmp(trim($host), $productionHost) === 0;
+    }
 }

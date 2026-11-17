@@ -475,3 +475,34 @@ it('keeps only the arrays in a list of values, as a list', function (): void {
     expect(Values::arrays([1, ['a'], 'x', ['b']]))->toBe([['a'], ['b']])
         ->and(Values::arrays('not a list'))->toBe([]);
 });
+
+it('reads a rich-text description as the text of its nodes', function (): void {
+    $bard = [
+        ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Dr. Doe treats knees.'], ['type' => 'text', 'text' => 'And hips.']]],
+        ['type' => 'paragraph'],
+        ['type' => 'paragraph', 'content' => [['type' => 'text', 'text' => 'Since 2001.']]],
+    ];
+    $items = mapper()->providerItems(personEntry(['bio_clinical' => $bard]), [locationEntry()], mapperSilos());
+    $location = mapper()->locationItem(locationEntry(values: ['short_desc' => '', 'about' => $bard]), mapperSilos());
+
+    expect($items[0]->fields['profile'])->toBe(['description' => 'Dr. Doe treats knees. And hips. Since 2001.'])
+        ->and($location->fields['profile'])->toBe(['description' => 'Dr. Doe treats knees. And hips. Since 2001.'])
+        ->and(FieldMapper::plainText(['type' => 'text', 'text' => 'one']))->toBe('one')
+        ->and(FieldMapper::plainText(['type' => 'doc', 'content' => [['type' => 'text', 'text' => 'a'], ['type' => 'hardBreak'], ['type' => 'text', 'text' => 'b']]]))->toBe('a b')
+        ->and(FieldMapper::plainText(['type' => 'text', 'text' => 5]))->toBe('')
+        ->and(FieldMapper::plainText(7))->toBe('7');
+});
+
+it('decodes entities in every title it sends or writes into an address line', function (): void {
+    $parent = locationEntry('main', 'Heart &amp; Vascular at Main');
+    $child = locationEntry('cardio', 'Cardio &amp; Rehab', parent: $parent);
+    $location = mapper()->locationItem(locationEntry(title: 'Orthopaedics &amp; Sports Medicine'), mapperSilos());
+    $quoted = mapper()->locationItem(locationEntry(title: 'O&apos;Neil Clinic'), mapperSilos());
+    $provider = mapper()->providerItems(personEntry(['clinical_title' => '', 'bio_clinical' => '']), [$child], mapperSilos())[0];
+
+    expect($location->fields['title'])->toBe('UAMS Health - Orthopaedics & Sports Medicine')
+        ->and($quoted->fields['title'])->toBe("UAMS Health - O'Neil Clinic")
+        ->and($provider->fields['title'])->toBe('UAMS Health - Jane Q. Doe, MD - Cardio & Rehab')
+        ->and($provider->fields['storefrontAddress'])->toMatchArray(['addressLines' => ['4301 W Markham St', 'Outpatient Center', 'Heart & Vascular', 'Cardio & Rehab']])
+        ->and($provider->fields['profile'])->toBe(['description' => 'Dr. Jane Doe is a health care provider at Cardio & Rehab employed by UAMS Health.']);
+});

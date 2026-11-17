@@ -118,6 +118,12 @@ final class Sync
     private function update(SyncItem $item, Mode $mode, array $listing): Outcome
     {
         $name = Values::str($listing['name'] ?? null);
+
+        // A listing created earlier in this run without a name cannot be addressed, and must not be created again
+        if ($name === '') {
+            return new Outcome($item, $mode, Action::Review, 'Store code is on a listing Google created without a name');
+        }
+
         $changed = ListingDiff::changedFields($item->fields, $listing);
 
         // Read the live attributes only when the content states some, so a provider item costs no call

@@ -100,7 +100,7 @@ final readonly class FieldMapper
 
         // Title, with the prefix the parent (or the location itself) asks for
         $fields = [];
-        $title = trim($location->title);
+        $title = self::decode($location->title);
         if ($title !== '') {
             $fields['title'] = ($source->isOn($handles['prefix'] ?? null) ? 'UAMS Health - ' : '').$title;
         }
@@ -148,20 +148,20 @@ final readonly class FieldMapper
             $fields = [];
 
             if ($name !== '') {
-                $fields['title'] = self::providerTitle($name, $location->title);
+                $fields['title'] = self::providerTitle($name, self::decode($location->title));
             }
 
             // Street, building, then the location's name (a child's parent first) without its place
             $lines = [$location->text($locationHandles['street'] ?? null), $location->text($locationHandles['facility'] ?? null)];
             if ($location->parent instanceof EntryData) {
-                $lines[] = self::nameWithoutPlace($location->parent->title);
+                $lines[] = self::nameWithoutPlace(self::decode($location->parent->title));
             }
 
-            $lines[] = self::nameWithoutPlace($location->title);
+            $lines[] = self::nameWithoutPlace(self::decode($location->title));
             $fields += $this->placeFields($location, $lines, $locationHandles);
 
             $description = $this->description($person, $handles['description'] ?? null);
-            $fields['profile'] = ['description' => $description !== '' ? $description : $this->providerFallbackDescription($person, $location->title)];
+            $fields['profile'] = ['description' => $description !== '' ? $description : $this->providerFallbackDescription($person, self::decode($location->title))];
 
             $items[] = new SyncItem(
                 $storeCode,
@@ -345,7 +345,7 @@ final readonly class FieldMapper
     private function description(EntryData $entry, mixed $handles): string
     {
         foreach (is_array($handles) ? $handles : [$handles] as $handle) {
-            $text = self::cleanDescription(Values::str($entry->get(Values::str($handle))));
+            $text = self::cleanDescription(self::plainText($entry->get($handle)));
 
             if ($text !== '') {
                 return $text;
@@ -353,6 +353,41 @@ final readonly class FieldMapper
         }
 
         return '';
+    }
+
+    /**
+     * A title with its HTML entities decoded and its ends trimmed, so `&amp;` is sent as `&`.
+     *
+     * @param  string  $title  An entry title.
+     */
+    private static function decode(string $title): string
+    {
+        return trim(html_entity_decode($title, ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+    }
+
+    /**
+     * A text field's value as text: a string as it is, and a rich-text (Bard)
+     * value as the text of its nodes, one space between nodes.
+     *
+     * A rich-text field holds a list of ProseMirror nodes rather than a string, so
+     * reading it as a string would find it empty and send the fallback instead.
+     *
+     * @param  mixed  $value  A text or rich-text field's value.
+     */
+    public static function plainText(mixed $value): string
+    {
+        if (! is_array($value)) {
+            return Values::str($value);
+        }
+
+        // A text node carries its words; any other node, or a list of nodes, carries them in its content
+        if (isset($value['text']) && is_string($value['text'])) {
+            return $value['text'];
+        }
+
+        $parts = array_map(self::plainText(...), array_is_list($value) ? $value : Values::arr($value['content'] ?? null));
+
+        return implode(' ', array_filter($parts, static fn (string $part): bool => $part !== ''));
     }
 
     /**
@@ -384,7 +419,6 @@ final readonly class FieldMapper
 
         $title = strtolower($person->text($handles['clinical_title'] ?? null));
         $role = $title === '' ? 'a health care provider' : (preg_match('/^[aeiou]/i', $title) === 1 ? 'an ' : 'a ').$title;
-        $location = trim($location);
 
         return $name.' is '.$role.($location === '' ? '' : ' at '.$location).' employed by UAMS Health.';
     }

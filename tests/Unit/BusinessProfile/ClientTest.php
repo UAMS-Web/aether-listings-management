@@ -332,3 +332,16 @@ it('marks a rate limit as not daily unless told', function (): void {
     expect((new RateLimitedException('slow down'))->daily)->toBeFalse()
         ->and((new RateLimitedException('slow down', true))->daily)->toBeTrue();
 });
+
+it('fails a success reply that is not JSON rather than reading it as an empty page', function (): void {
+    $transport = new FakeTransport(fn (string $method, string $url): ?HttpResponse => str_contains($url, '/locations') ? new HttpResponse(200, '<html>proxy</html>') : null);
+
+    expect(fn (): array => clientWith($transport)->listings('accounts/1'))->toThrow(ApiException::class, 'Google API GET failed (200): the reply is not JSON');
+});
+
+it('sends a value with bytes that are not UTF-8 with a replacement character instead of failing', function (): void {
+    $transport = new FakeTransport;
+    clientWith($transport)->patch('locations/1', ['title' => "Caf\xE9"], 'title');
+
+    expect(json_decode((string) $transport->apiRequests()[0]['body'], true))->toBe(['title' => "Caf\u{FFFD}"]);
+});

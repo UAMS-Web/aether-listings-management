@@ -92,3 +92,15 @@ it('returns a numeric silo name as a string', function (): void {
         ->and($silos->mode('7'))->toBe(Mode::Live)
         ->and($silos->account('7', Kind::Location))->toBe('accounts/7l');
 });
+
+it('treats only the configured production host as production, and no host when none is configured', function (string $host, string $production, bool $expected): void {
+    expect(Mode::isProductionHost($host, $production))->toBe($expected);
+})->with([
+    'the production host' => ['health.example.test', 'health.example.test', true],
+    'in another letter case' => ['Health.Example.Test', ' health.example.test ', true],
+    'with spaces around the host' => [' health.example.test ', 'health.example.test', true],
+    'another host' => ['staging.example.test', 'health.example.test', false],
+    'none configured' => ['health.example.test', '', false],
+    'none configured and no host' => ['', '', false],
+    'only spaces configured' => ['', '  ', false],
+]);
