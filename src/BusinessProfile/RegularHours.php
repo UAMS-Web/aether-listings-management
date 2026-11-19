@@ -20,11 +20,12 @@ namespace UAMSWeb\Aether\People\ListingsManagement\BusinessProfile;
  *   Business Profile says a day is closed.
  * - `open_24h` is one period from 00:00 to 24:00.
  * - Any other status, or none, is open during the rule's time spans. A span
- *   needs an opening and a closing time as `HH:MM` (seconds are ignored), and
- *   the two must differ; a span without them is dropped, and an open rule left
- *   with no span changes no day.
- * - A span that closes at 00:00 closes at the end of its day (24:00). One that
- *   closes earlier than it opens closes the next day.
+ *   needs an opening and a closing time as `HH:MM` (seconds are ignored); a
+ *   span without both is dropped, and an open rule left with no span changes
+ *   no day. The site likewise shows only spans with both times.
+ * - A span that closes at 00:00 closes at the end of its day (24:00), so
+ *   00:00 to 00:00 is the whole day. One that closes earlier than it opens, or
+ *   at the minute it opens, closes the next day.
  * - A rule or span marked as not enabled is skipped.
  */
 final class RegularHours
@@ -55,7 +56,7 @@ final class RegularHours
         $week = [];
 
         foreach (self::enabled($rules) as $rule) {
-            if (Values::str($rule['service_mode'] ?? null) === 'telemedicine') {
+            if (trim(Values::str($rule['service_mode'] ?? null)) === 'telemedicine') {
                 continue;
             }
 
@@ -74,11 +75,8 @@ final class RegularHours
                 $periods[] = [
                     'openDay' => $days[$index],
                     'openTime' => self::timeOfDay($open),
-                    // A span that closes before it opens runs past midnight. A span
-                    // never opens and closes at the same minute (spans() drops one),
-                    // so `<` and `<=` cannot be told apart here.
-                    // @pest-mutate-ignore: SmallerToSmallerOrEqual
-                    'closeDay' => $days[($index + ($close < $open ? 1 : 0)) % 7],
+                    // A span that closes before it opens, or when it opens, runs past midnight
+                    'closeDay' => $days[($index + ($close <= $open ? 1 : 0)) % 7],
                     'closeTime' => self::timeOfDay($close),
                 ];
             }
@@ -94,12 +92,16 @@ final class RegularHours
      */
     public static function minutes(mixed $value): ?int
     {
-        if (preg_match('/^(\d{1,2}):(\d\d)(?::\d\d)?$/', trim(Values::str($value)), $matches) !== 1) {
+        if (preg_match('/^(?<hours>\d{1,2}):(?<minutes>\d\d)(?::\d\d)?$/', trim(Values::str($value)), $matches) !== 1) {
             return null;
         }
 
-        $hours = (int) $matches[1];
-        $minutes = (int) $matches[2];
+        // The pattern admits digits alone, which PHP compares and multiplies as the
+        // number they spell, so the casts change no result; they give the value its type.
+        // @pest-mutate-ignore: RemoveIntegerCast
+        $hours = (int) $matches['hours'];
+        // @pest-mutate-ignore: RemoveIntegerCast
+        $minutes = (int) $matches['minutes'];
 
         return $hours < 24 && $minutes < 60 ? $hours * 60 + $minutes : null;
     }
@@ -128,7 +130,7 @@ final class RegularHours
             $open = self::minutes($span['open'] ?? null);
             $close = self::minutes($span['close'] ?? null);
 
-            if ($open !== null && $close !== null && $open !== $close) {
+            if ($open !== null && $close !== null) {
                 $spans[] = [$open, $close === 0 ? self::DAY_END : $close];
             }
         }

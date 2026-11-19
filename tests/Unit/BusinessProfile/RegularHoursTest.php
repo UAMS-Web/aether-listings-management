@@ -113,9 +113,10 @@ it('skips telemedicine rules and reads a rule with no service mode as in person'
     $premises = hoursRule(['monday']);
     unset($premises['service_mode']);
 
+    // The telemedicine rule comes first, so skipping it must not end the reading
     $hours = RegularHours::fromRules([
+        hoursRule(['monday', 'tuesday'], spans: [['06:00', '22:00']], extra: ['service_mode' => ' telemedicine ']),
         $premises,
-        hoursRule(['monday', 'tuesday'], spans: [['06:00', '22:00']], extra: ['service_mode' => 'telemedicine']),
     ]);
 
     expect($hours)->toBe(['periods' => [hoursPeriod('MONDAY', 8, 0, 'MONDAY', 17, 0)]]);
@@ -124,6 +125,13 @@ it('skips telemedicine rules and reads a rule with no service mode as in person'
 it('closes a span that ends at 00:00 at the end of its own day', function (): void {
     expect(RegularHours::fromRules([hoursRule(['monday'], spans: [['18:00', '00:00']])]))
         ->toBe(['periods' => [hoursPeriod('MONDAY', 18, 0, 'MONDAY', 24, 0)]]);
+});
+
+it('reads a span from 00:00 to 00:00 as the whole day, and one closing when it opens as closing the next day', function (): void {
+    expect(RegularHours::fromRules([hoursRule(['saturday'], spans: [['00:00', '00:00']])]))
+        ->toBe(['periods' => [hoursPeriod('SATURDAY', 0, 0, 'SATURDAY', 24, 0)]])
+        ->and(RegularHours::fromRules([hoursRule(['monday'], spans: [['08:00', '08:00']])]))
+        ->toBe(['periods' => [hoursPeriod('MONDAY', 8, 0, 'TUESDAY', 8, 0)]]);
 });
 
 it('closes a span that ends before it opens on the next day, Sunday into Monday', function (): void {
@@ -140,7 +148,6 @@ it('drops a span without two usable, different times, and keeps the good ones', 
 })->with([
     'no open' => ['', '12:00'],
     'no close' => ['08:00', ''],
-    'same time' => ['08:00', '08:00'],
     'hour 24' => ['24:00', '12:00'],
     'minute 60' => ['08:60', '12:00'],
     'not a time' => ['8am', '12:00'],

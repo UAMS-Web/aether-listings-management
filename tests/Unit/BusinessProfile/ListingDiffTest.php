@@ -174,3 +174,15 @@ it('compares additional categories by name alone, and counts a different name as
     expect(ListingDiff::changedFields($desired, $sameWithLabels))->toBe([])
         ->and(array_keys(ListingDiff::changedFields($desired, $otherName)))->toBe(['categories']);
 });
+
+it('counts a period whose opening day alone, or closing day alone, differs as a change', function (string $openDay, string $closeDay): void {
+    // An overnight span, Monday 22:00 to Tuesday 06:00
+    $desired = ['regularHours' => ['periods' => [['openDay' => 'MONDAY', 'openTime' => ['hours' => 22], 'closeDay' => 'TUESDAY', 'closeTime' => ['hours' => 6]]]]];
+    $live = ['regularHours' => ['periods' => [['openDay' => $openDay, 'openTime' => ['hours' => 22], 'closeDay' => $closeDay, 'closeTime' => ['hours' => 6]]]]];
+
+    expect(ListingDiff::changedFields($desired, $live))->toBe($desired)
+        ->and(ListingDiff::changedFields($desired, $desired))->toBe([]);
+})->with([
+    'opening day' => ['SUNDAY', 'TUESDAY'],
+    'closing day' => ['MONDAY', 'WEDNESDAY'],
+]);

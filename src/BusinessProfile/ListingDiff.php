@@ -124,14 +124,14 @@ final class ListingDiff
     }
 
     /**
-     * Regular hours as one `day open day close` line per period, in minutes, sorted.
+     * Regular hours as the open day, open time, close day and close time of each period, sorted.
      *
      * Google may give midnight as `{}` and leave out a zero part, and a period
      * that closes at midnight may close at 24:00 or at 00:00 the next day; each
      * pair reads the same here.
      *
      * @param  array<array-key, mixed>  $hours  A `regularHours` field.
-     * @return list<string>
+     * @return list<array{string, array{int, int}, string, array{int, int}}>
      */
     private static function normalizeHours(array $hours): array
     {
@@ -145,12 +145,12 @@ final class ListingDiff
             $close = self::clock($period['closeTime'] ?? null);
 
             // Midnight starting the next day is 24:00 ending this one
-            if ($close === 0 && $closeDay === ($next[$openDay] ?? '')) {
+            if ($close === [0, 0] && $closeDay === ($next[$openDay] ?? null)) {
                 $closeDay = $openDay;
-                $close = 1440;
+                $close = [24, 0];
             }
 
-            $periods[] = $openDay.' '.self::clock($period['openTime'] ?? null).' '.$closeDay.' '.$close;
+            $periods[] = [$openDay, self::clock($period['openTime'] ?? null), $closeDay, $close];
         }
 
         sort($periods);
@@ -159,15 +159,16 @@ final class ListingDiff
     }
 
     /**
-     * A Business Profile time of day as minutes from midnight; a missing part is zero.
+     * A Business Profile time of day as its hours and minutes; a missing part is zero.
      *
      * @param  mixed  $time  A time of day: `hours` and `minutes`.
+     * @return array{int, int}
      */
-    private static function clock(mixed $time): int
+    private static function clock(mixed $time): array
     {
         $time = Values::arr($time);
 
-        return (int) Values::str($time['hours'] ?? null) * 60 + (int) Values::str($time['minutes'] ?? null);
+        return [(int) Values::str($time['hours'] ?? null), (int) Values::str($time['minutes'] ?? null)];
     }
 
     /**
