@@ -4,30 +4,35 @@ declare(strict_types=1);
 
 namespace UAMSWeb\Aether\People\ListingsManagement\BusinessProfile;
 
+use DateTimeImmutable;
+
 /**
  * Which of a listing's fields and attributes differ from what the content says.
  *
  * Values are compared after normalization (phone digits only, coordinates to
  * five places, categories by resource name in any order, hours as periods in
- * any order), so a formatting difference is not a change. Only the fields the
- * sync owns are ever compared or written; photos, posts, special hours and
- * questions belong to people.
+ * any order, special hours from today on), so a formatting difference is not a
+ * change. Only the fields the sync owns are ever compared or written; photos,
+ * posts and questions belong to people.
  */
 final class ListingDiff
 {
     /** The Business Profile fields the sync owns, in the order an update mask names them. */
-    public const array OWNED_FIELDS = ['title', 'storefrontAddress', 'latlng', 'phoneNumbers', 'websiteUri', 'categories', 'profile', 'regularHours'];
+    public const array OWNED_FIELDS = ['title', 'storefrontAddress', 'latlng', 'phoneNumbers', 'websiteUri', 'categories', 'profile', 'regularHours', 'specialHours'];
 
     /**
      * The desired fields that differ from the live listing.
      *
-     * A field the content does not state is never compared, so the sync cannot clear it.
+     * A field the content does not state is never compared, so the sync cannot
+     * clear it. Special hours the content states as none are compared, and clear
+     * the listing's: an empty set is a statement.
      *
      * @param  array<string, mixed>  $desired  Fields from the field mapper.
      * @param  array<array-key, mixed>  $live  The live listing as the API returns it.
+     * @param  string  $today  Today, `YYYY-MM-DD`; special hours before it are not compared.
      * @return array<string, mixed> The subset of $desired that differs; empty when nothing needs writing.
      */
-    public static function changedFields(array $desired, array $live): array
+    public static function changedFields(array $desired, array $live, string $today = ''): array
     {
         $changed = [];
 
@@ -37,7 +42,7 @@ final class ListingDiff
                 continue;
             }
 
-            if (self::normalize($field, $desired[$field]) !== self::normalize($field, $live[$field] ?? null)) {
+            if (self::normalize($field, $desired[$field], $today) !== self::normalize($field, $live[$field] ?? null, $today)) {
                 $changed[$field] = $desired[$field];
             }
         }
@@ -77,10 +82,16 @@ final class ListingDiff
      *
      * @param  string  $field  A field name from self::OWNED_FIELDS.
      * @param  mixed  $value  The value, or null when the listing has none.
+     * @param  string  $today  Today, `YYYY-MM-DD`, for special hours.
      * @return mixed The comparable form, or null when there is no value.
      */
-    private static function normalize(string $field, mixed $value): mixed
+    private static function normalize(string $field, mixed $value, string $today): mixed
     {
+        // No special hours and an empty set are the same statement
+        if ($field === 'specialHours') {
+            return self::normalizeSpecialHours(Values::arr($value), $today);
+        }
+
         if ($value === null) {
             return null;
         }
@@ -156,6 +167,88 @@ final class ListingDiff
         sort($periods);
 
         return $periods;
+    }
+
+    /**
+     * Special hours from today on, as each period's date alone when it is closed, or its date, times and end date when open, sorted.
+     *
+     * A period with no end date ends on its start date, and a closed period's
+     * times are ignored, as Business Profile reads them.
+     *
+     * @param  array<array-key, mixed>  $hours  A `specialHours` field, or empty.
+     * @param  string  $today  Today, `YYYY-MM-DD`; an earlier period is left out.
+     * @return list<list<mixed>>
+     */
+    private static function normalizeSpecialHours(array $hours, string $today): array
+    {
+        $periods = [];
+
+        foreach (Values::arrays($hours['specialHourPeriods'] ?? null) as $period) {
+            $start = self::dateText($period['startDate'] ?? null);
+
+            if ($start < $today) {
+                continue;
+            }
+
+            if (($period['closed'] ?? false) === true) {
+                $periods[] = [$start];
+
+                continue;
+            }
+
+            $end = self::dateText($period['endDate'] ?? $period['startDate'] ?? null);
+            $close = self::clock($period['closeTime'] ?? null);
+
+            // Midnight starting the next day is 24:00 ending this one
+            if ($close === [0, 0] && $end === new DateTimeImmutable($start)->modify('+1 day')->format('Y-m-d')) {
+                $end = $start;
+                $close = [24, 0];
+            }
+
+            $periods[] = [$start, self::clock($period['openTime'] ?? null), $end, $close];
+        }
+
+        sort($periods);
+
+        return $periods;
+    }
+
+    /**
+     * The dates from today on where the listing has special hours the content does not, which a write would replace.
+     *
+     * @param  array<string, mixed>  $desired  Fields from the field mapper.
+     * @param  array<array-key, mixed>  $live  The live listing.
+     * @param  string  $today  Today, `YYYY-MM-DD`.
+     * @return list<string> `YYYY-MM-DD` dates, in order; empty when the content does not state special hours.
+     */
+    public static function replacedSpecialDates(array $desired, array $live, string $today): array
+    {
+        if (! array_key_exists('specialHours', $desired)) {
+            return [];
+        }
+
+        $kept = self::normalizeSpecialHours(Values::arr($desired['specialHours']), $today);
+        $dates = [];
+
+        foreach (self::normalizeSpecialHours(Values::arr($live['specialHours'] ?? null), $today) as $period) {
+            if (! in_array($period, $kept, true)) {
+                $dates[] = Values::str($period[0]);
+            }
+        }
+
+        return array_values(array_unique($dates));
+    }
+
+    /**
+     * A Business Profile date as `YYYY-MM-DD`; a missing part is zero.
+     *
+     * @param  mixed  $date  A date: `year`, `month` and `day`.
+     */
+    private static function dateText(mixed $date): string
+    {
+        $date = Values::arr($date);
+
+        return sprintf('%04d-%02d-%02d', Values::str($date['year'] ?? null), Values::str($date['month'] ?? null), Values::str($date['day'] ?? null));
     }
 
     /**

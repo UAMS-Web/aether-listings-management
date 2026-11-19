@@ -27,8 +27,9 @@ final class Sync
      * @param  Silos  $silos  The silos and their modes.
      * @param  ListingIndex  $index  Every listing the credentials can see.
      * @param  ?Closure(Outcome): void  $logger  Receives each outcome, except an off silo's skip, which says nothing the settings do not.
+     * @param  ?string  $today  Today, `YYYY-MM-DD`, for comparing special hours; by default today in SpecialHours::TIMEZONE.
      */
-    public function __construct(private readonly Client $client, private readonly Silos $silos, private readonly ListingIndex $index, private readonly ?Closure $logger = null) {}
+    public function __construct(private readonly Client $client, private readonly Silos $silos, private readonly ListingIndex $index, private readonly ?Closure $logger = null, private readonly ?string $today = null) {}
 
     /**
      * Decide and, where the silo is live, carry out one action per item.
@@ -124,7 +125,8 @@ final class Sync
             return new Outcome($item, $mode, Action::Review, 'Store code is on a listing Google created without a name');
         }
 
-        $changed = ListingDiff::changedFields($item->fields, $listing);
+        $today = $this->today ?? SpecialHours::today();
+        $changed = ListingDiff::changedFields($item->fields, $listing, $today);
 
         // Read the live attributes only when the content states some, so a provider item costs no call
         try {
@@ -140,8 +142,12 @@ final class Sync
         $fields = array_keys($changed);
         $attributeNames = array_keys($attributes);
 
+        // Name the dates whose special hours on the listing a write replaces, so hand-kept hours are seen before they go
+        $replaced = ListingDiff::replacedSpecialDates($changed, $listing, $today);
+        $note = $replaced === [] ? '' : "; replaces the listing's special hours on ".implode(', ', $replaced);
+
         if ($mode !== Mode::Live) {
-            return new Outcome($item, $mode, Action::Update, 'Dry run, no write made', $fields, $attributeNames, $name);
+            return new Outcome($item, $mode, Action::Update, 'Dry run, no write made'.$note, $fields, $attributeNames, $name);
         }
 
         try {
@@ -156,7 +162,7 @@ final class Sync
             return $this->failure($item, $mode, $apiException, $name, $fields, $attributeNames);
         }
 
-        return new Outcome($item, $mode, Action::Update, 'Updated', $fields, $attributeNames, $name, written: true);
+        return new Outcome($item, $mode, Action::Update, 'Updated'.$note, $fields, $attributeNames, $name, written: true);
     }
 
     /**

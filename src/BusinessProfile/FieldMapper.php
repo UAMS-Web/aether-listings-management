@@ -19,10 +19,12 @@ namespace UAMSWeb\Aether\People\ListingsManagement\BusinessProfile;
  *   `UAMS Health - <name> - <location>`.
  * - A location's title prefix, description and attributes are read from its
  *   parent when it has one, as the WordPress sync read them.
- * - A location's regular hours are its own, and a provider's listing carries
- *   the hours of the location it is at. A location marked as having variable
- *   hours, or with no open day, states no hours, so the sync leaves whatever
- *   hours its listings already have.
+ * - A location's regular and special hours are its own, and a provider's
+ *   listing carries the hours of the location it is at. A location marked as
+ *   having variable hours, or with no open day, states no hours of either
+ *   kind, so the sync leaves whatever hours its listings already have. A
+ *   location that states regular hours always states its special hours, none
+ *   included, so a closure deleted from the entry is cleared from the listing.
  */
 final readonly class FieldMapper
 {
@@ -34,8 +36,9 @@ final readonly class FieldMapper
 
     /**
      * @param  array<array-key, mixed>  $config  The add-on's `mapping` setting: `location` and `provider` handles, `default_categories` and `tracking`.
+     * @param  ?string  $today  Today, `YYYY-MM-DD`, the first date special hours are written for; by default today in SpecialHours::TIMEZONE.
      */
-    public function __construct(private array $config) {}
+    public function __construct(private array $config, private ?string $today = null) {}
 
     /**
      * A location's store code: its slug, or its parent's slug and its own joined by `_`.
@@ -125,7 +128,7 @@ final readonly class FieldMapper
             Kind::Location,
             $this->silo($location, $silos),
             $location->isOn($handles['exclude'] ?? null) || ($location->parent instanceof EntryData && $location->parent->isOn($handles['exclude'] ?? null)),
-            $fields + $categories + $this->website($location, self::locationStoreCode($location), Kind::Location) + $this->regularHours($location),
+            $fields + $categories + $this->website($location, self::locationStoreCode($location), Kind::Location) + $this->hours($location),
             $this->attributes($source),
             $unresolved,
         );
@@ -172,7 +175,7 @@ final readonly class FieldMapper
                 Kind::Provider,
                 $this->silo($location, $silos),
                 $person->isOn($handles['exclude'] ?? null) || $location->isOn($locationHandles['exclude_providers'] ?? null),
-                $fields + $categories + $this->website($person, $storeCode, Kind::Provider) + $this->regularHours($location),
+                $fields + $categories + $this->website($person, $storeCode, Kind::Provider) + $this->hours($location),
                 [],
                 $unresolved,
             );
@@ -250,17 +253,27 @@ final readonly class FieldMapper
     }
 
     /**
-     * A location's regular hours field, or nothing when it is marked as having variable hours or no day is open.
+     * A location's regular and special hours fields, or neither when it is marked as having variable hours or no day is open.
+     *
+     * Business Profile refuses special hours on a listing without regular hours,
+     * so special hours are stated only beside them, and then always.
      *
      * @param  EntryData  $location  The location, read for its own hours and never its parent's.
      * @return array<string, mixed>
      */
-    private function regularHours(EntryData $location): array
+    private function hours(EntryData $location): array
     {
         $handles = $this->handles('location');
-        $hours = $location->isOn($handles['hours_variable'] ?? null) ? null : RegularHours::fromRules($location->get($handles['regular_hours'] ?? null));
+        $regular = $location->isOn($handles['hours_variable'] ?? null) ? null : RegularHours::fromRules($location->get($handles['regular_hours'] ?? null));
 
-        return $hours === null ? [] : ['regularHours' => $hours];
+        if ($regular === null) {
+            return [];
+        }
+
+        return [
+            'regularHours' => $regular,
+            'specialHours' => SpecialHours::fromRows($location->get($handles['special_hours'] ?? null), $this->today ?? SpecialHours::today()),
+        ];
     }
 
     /**
