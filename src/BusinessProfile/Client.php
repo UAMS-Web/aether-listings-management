@@ -31,7 +31,7 @@ final class Client
     public const int MAX_PAGES = 1000;
 
     /** The fields read back from a listing for the comparison. */
-    public const string READ_MASK = 'name,storeCode,title,storefrontAddress,latlng,phoneNumbers,websiteUri,categories,profile,metadata,openInfo';
+    public const string READ_MASK = 'name,storeCode,title,storefrontAddress,latlng,phoneNumbers,websiteUri,categories,profile,regularHours,metadata,openInfo';
 
     /** The access token from the last exchange, or null before the first. */
     private ?string $token = null;

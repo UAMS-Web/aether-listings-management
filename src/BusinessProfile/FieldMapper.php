@@ -19,6 +19,10 @@ namespace UAMSWeb\Aether\People\ListingsManagement\BusinessProfile;
  *   `UAMS Health - <name> - <location>`.
  * - A location's title prefix, description and attributes are read from its
  *   parent when it has one, as the WordPress sync read them.
+ * - A location's regular hours are its own, and a provider's listing carries
+ *   the hours of the location it is at. A location marked as having variable
+ *   hours, or with no open day, states no hours, so the sync leaves whatever
+ *   hours its listings already have.
  */
 final readonly class FieldMapper
 {
@@ -121,7 +125,7 @@ final readonly class FieldMapper
             Kind::Location,
             $this->silo($location, $silos),
             $location->isOn($handles['exclude'] ?? null) || ($location->parent instanceof EntryData && $location->parent->isOn($handles['exclude'] ?? null)),
-            $fields + $categories + $this->website($location, self::locationStoreCode($location), Kind::Location),
+            $fields + $categories + $this->website($location, self::locationStoreCode($location), Kind::Location) + $this->regularHours($location),
             $this->attributes($source),
             $unresolved,
         );
@@ -168,7 +172,7 @@ final readonly class FieldMapper
                 Kind::Provider,
                 $this->silo($location, $silos),
                 $person->isOn($handles['exclude'] ?? null) || $location->isOn($locationHandles['exclude_providers'] ?? null),
-                $fields + $categories + $this->website($person, $storeCode, Kind::Provider),
+                $fields + $categories + $this->website($person, $storeCode, Kind::Provider) + $this->regularHours($location),
                 [],
                 $unresolved,
             );
@@ -243,6 +247,20 @@ final readonly class FieldMapper
         }
 
         return $fields;
+    }
+
+    /**
+     * A location's regular hours field, or nothing when it is marked as having variable hours or no day is open.
+     *
+     * @param  EntryData  $location  The location, read for its own hours and never its parent's.
+     * @return array<string, mixed>
+     */
+    private function regularHours(EntryData $location): array
+    {
+        $handles = $this->handles('location');
+        $hours = $location->isOn($handles['hours_variable'] ?? null) ? null : RegularHours::fromRules($location->get($handles['regular_hours'] ?? null));
+
+        return $hours === null ? [] : ['regularHours' => $hours];
     }
 
     /**
