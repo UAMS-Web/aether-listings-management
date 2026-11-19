@@ -8,14 +8,15 @@ namespace UAMSWeb\Aether\People\ListingsManagement\BusinessProfile;
  * Which of a listing's fields and attributes differ from what the content says.
  *
  * Values are compared after normalization (phone digits only, coordinates to
- * five places, categories by resource name in any order), so a formatting
- * difference is not a change. Only the fields the sync owns are ever compared or
- * written; photos, posts, hours and questions belong to people.
+ * five places, categories by resource name in any order, hours as periods in
+ * any order), so a formatting difference is not a change. Only the fields the
+ * sync owns are ever compared or written; photos, posts, special hours and
+ * questions belong to people.
  */
 final class ListingDiff
 {
     /** The Business Profile fields the sync owns, in the order an update mask names them. */
-    public const array OWNED_FIELDS = ['title', 'storefrontAddress', 'latlng', 'phoneNumbers', 'websiteUri', 'categories', 'profile'];
+    public const array OWNED_FIELDS = ['title', 'storefrontAddress', 'latlng', 'phoneNumbers', 'websiteUri', 'categories', 'profile', 'regularHours'];
 
     /**
      * The desired fields that differ from the live listing.
@@ -102,6 +103,7 @@ final class ListingDiff
             ],
             'categories' => self::normalizeCategories($parts),
             'profile' => ['description' => trim(Values::str($parts['description'] ?? null))],
+            'regularHours' => self::normalizeHours($parts),
             default => is_string($value) ? trim($value) : $value,
         };
     }
@@ -119,6 +121,54 @@ final class ListingDiff
         $digits = implode('', array_filter(str_split($phone), ctype_digit(...)));
 
         return strlen($digits) === 11 && $digits[0] === '1' ? substr($digits, 1) : $digits;
+    }
+
+    /**
+     * Regular hours as the open day, open time, close day and close time of each period, sorted.
+     *
+     * Google may give midnight as `{}` and leave out a zero part, and a period
+     * that closes at midnight may close at 24:00 or at 00:00 the next day; each
+     * pair reads the same here.
+     *
+     * @param  array<array-key, mixed>  $hours  A `regularHours` field.
+     * @return list<array{string, array{int, int}, string, array{int, int}}>
+     */
+    private static function normalizeHours(array $hours): array
+    {
+        $days = array_values(RegularHours::DAYS);
+        $next = array_combine($days, [...array_slice($days, 1), $days[0]]);
+        $periods = [];
+
+        foreach (Values::arrays($hours['periods'] ?? null) as $period) {
+            $openDay = Values::str($period['openDay'] ?? null);
+            $closeDay = Values::str($period['closeDay'] ?? null);
+            $close = self::clock($period['closeTime'] ?? null);
+
+            // Midnight starting the next day is 24:00 ending this one
+            if ($close === [0, 0] && $closeDay === ($next[$openDay] ?? null)) {
+                $closeDay = $openDay;
+                $close = [24, 0];
+            }
+
+            $periods[] = [$openDay, self::clock($period['openTime'] ?? null), $closeDay, $close];
+        }
+
+        sort($periods);
+
+        return $periods;
+    }
+
+    /**
+     * A Business Profile time of day as its hours and minutes; a missing part is zero.
+     *
+     * @param  mixed  $time  A time of day: `hours` and `minutes`.
+     * @return array{int, int}
+     */
+    private static function clock(mixed $time): array
+    {
+        $time = Values::arr($time);
+
+        return [(int) Values::str($time['hours'] ?? null), (int) Values::str($time['minutes'] ?? null)];
     }
 
     /**

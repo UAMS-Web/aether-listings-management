@@ -79,6 +79,9 @@ return [
             'exclude_providers' => 'google_business_profile_exclude_providers_query',
             'brand_query' => 'brand_organization_query',
             'brand' => 'brand_organization',
+            // The weekly hours rules, and the toggle marking hours that vary (which writes none)
+            'regular_hours' => 'regular_hours',
+            'hours_variable' => 'hours_variable_query',
             // Radio fields answering true, false or not applicable => Business Profile attribute
             'attributes' => [
                 'google_business_profile_has_wheelchair_accessible_entrance' => 'has_wheelchair_accessible_entrance',

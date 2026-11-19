@@ -434,3 +434,63 @@ it('logs an excluded item even when its silo is off', function (): void {
     expect($run['outcomes'][0]->reason)->toBe('Excluded from Google Business Profile by the content')
         ->and($run['log'])->toHaveCount(1);
 });
+
+/**
+ * A regular hours field: Monday from the given opening hour to 17:00.
+ *
+ * @return array{periods: list<array<string, mixed>>}
+ */
+function syncHours(int $opens = 8): array
+{
+    return ['periods' => [['openDay' => 'MONDAY', 'openTime' => ['hours' => $opens, 'minutes' => 0], 'closeDay' => 'MONDAY', 'closeTime' => ['hours' => 17, 'minutes' => 0]]]];
+}
+
+it('reports each listing whose live hours differ from its entry in a dry run, and writes nothing', function (): void {
+    // Two listings: one with other hours, one with the same hours in Google's form
+    $listings = [
+        syncListing(fields: syncFields() + ['regularHours' => syncHours(9)]),
+        syncListing(code: 'other', name: 'locations/2', fields: syncFields() + ['regularHours' => ['periods' => [['openDay' => 'MONDAY', 'openTime' => ['hours' => 8], 'closeDay' => 'MONDAY', 'closeTime' => ['hours' => 17]]]]]),
+    ];
+    $run = runSync([syncItem(fields: syncFields() + ['regularHours' => syncHours()]), syncItem(code: 'other', fields: syncFields() + ['regularHours' => syncHours()])], $listings, ['main' => 'dry-run']);
+    [$differs, $matches] = $run['outcomes'];
+
+    expect($differs->action)->toBe(Action::Update)
+        ->and($differs->reason)->toBe('Dry run, no write made')
+        ->and($differs->fields)->toBe(['regularHours'])
+        ->and($differs->toArray()['fields'])->toBe(['regularHours'])
+        ->and($matches->action)->toBe(Action::Noop)
+        ->and($run['transport']->writes())->toBe([]);
+});
+
+it('writes the hours of a live listing with a mask naming them', function (): void {
+    $run = runSync([syncItem(fields: syncFields() + ['regularHours' => syncHours()])], [syncListing(fields: syncFields() + ['regularHours' => syncHours(9)])]);
+    $writes = $run['transport']->writes();
+
+    expect($run['outcomes'][0]->fields)->toBe(['regularHours'])
+        ->and($writes)->toHaveCount(1)
+        ->and($writes[0]['url'])->toBe('https://mybusinessbusinessinformation.googleapis.com/v1/locations/1?updateMask=regularHours')
+        ->and(json_decode((string) $writes[0]['body'], true))->toBe(['regularHours' => syncHours()]);
+});
+
+it('leaves the hours already on a listing when the entry states none', function (): void {
+    // The entry states no hours (none set, or variable); the listing has hours someone keeps by hand
+    $kept = syncFields() + ['regularHours' => syncHours(7)];
+    $unchanged = runSync([syncItem()], [syncListing(fields: $kept)]);
+    $retitled = runSync([syncItem(fields: syncFields('New Clinic'))], [syncListing(fields: $kept)]);
+    $writes = $retitled['transport']->writes();
+
+    // Expect no write at all, and a title change that neither names nor sends the hours
+    expect($unchanged['outcomes'][0]->action)->toBe(Action::Noop)
+        ->and($unchanged['transport']->writes())->toBe([])
+        ->and($writes)->toHaveCount(1)
+        ->and($writes[0]['url'])->toBe('https://mybusinessbusinessinformation.googleapis.com/v1/locations/1?updateMask=title')
+        ->and(json_decode((string) $writes[0]['body'], true))->toBe(['title' => 'New Clinic']);
+});
+
+it('creates a listing with its hours', function (): void {
+    $run = runSync([syncItem(fields: syncFields() + ['regularHours' => syncHours()])]);
+    $writes = $run['transport']->writes();
+
+    expect($run['outcomes'][0]->action)->toBe(Action::Create)
+        ->and(json_decode((string) $writes[0]['body'], true))->toMatchArray(['regularHours' => syncHours()]);
+});

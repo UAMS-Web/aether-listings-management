@@ -25,6 +25,11 @@ function diffFields(): array
         'websiteUri' => 'https://example.test/clinic/',
         'categories' => ['primaryCategory' => ['name' => 'categories/gcid:a'], 'additionalCategories' => [['name' => 'categories/gcid:b'], ['name' => 'categories/gcid:c']]],
         'profile' => ['description' => 'About the clinic.'],
+        'regularHours' => ['periods' => [
+            ['openDay' => 'MONDAY', 'openTime' => ['hours' => 8, 'minutes' => 30], 'closeDay' => 'MONDAY', 'closeTime' => ['hours' => 17, 'minutes' => 0]],
+            ['openDay' => 'FRIDAY', 'openTime' => ['hours' => 0, 'minutes' => 0], 'closeDay' => 'FRIDAY', 'closeTime' => ['hours' => 24, 'minutes' => 0]],
+            ['openDay' => 'SUNDAY', 'openTime' => ['hours' => 20, 'minutes' => 0], 'closeDay' => 'SUNDAY', 'closeTime' => ['hours' => 24, 'minutes' => 0]],
+        ]],
     ];
 }
 
@@ -38,6 +43,12 @@ it('finds no change across formatting differences', function (): void {
         'websiteUri' => 'https://example.test/clinic/',
         'categories' => ['primaryCategory' => ['name' => 'categories/gcid:a', 'displayName' => 'A'], 'additionalCategories' => [['name' => 'categories/gcid:c'], ['name' => 'categories/gcid:b']]],
         'profile' => ['description' => 'About the clinic. '],
+        // Google leaves out zero parts, sends midnight as {}, and may close at 00:00 the next day; the order is its own
+        'regularHours' => ['periods' => [
+            ['openDay' => 'SUNDAY', 'openTime' => ['hours' => 20], 'closeDay' => 'MONDAY', 'closeTime' => []],
+            ['openDay' => 'FRIDAY', 'openTime' => [], 'closeDay' => 'FRIDAY', 'closeTime' => ['hours' => 24]],
+            ['openDay' => 'MONDAY', 'openTime' => ['hours' => 8, 'minutes' => 30], 'closeDay' => 'MONDAY', 'closeTime' => ['hours' => 17]],
+        ]],
     ];
 
     expect(ListingDiff::changedFields(diffFields(), $live))->toBe([]);
@@ -61,6 +72,38 @@ it('reports each differing field on its own, with its desired value', function (
     'primary category' => ['categories', ['primaryCategory' => ['name' => 'categories/gcid:z'], 'additionalCategories' => [['name' => 'categories/gcid:b'], ['name' => 'categories/gcid:c']]]],
     'additional category' => ['categories', ['primaryCategory' => ['name' => 'categories/gcid:a'], 'additionalCategories' => [['name' => 'categories/gcid:b']]]],
     'description' => ['profile', ['description' => 'Old text.']],
+    'opening minute' => ['regularHours', ['periods' => [
+        ['openDay' => 'MONDAY', 'openTime' => ['hours' => 8, 'minutes' => 0], 'closeDay' => 'MONDAY', 'closeTime' => ['hours' => 17]],
+        ['openDay' => 'FRIDAY', 'openTime' => [], 'closeDay' => 'FRIDAY', 'closeTime' => ['hours' => 24]],
+        ['openDay' => 'SUNDAY', 'openTime' => ['hours' => 20], 'closeDay' => 'SUNDAY', 'closeTime' => ['hours' => 24]],
+    ]]],
+    'closing hour' => ['regularHours', ['periods' => [
+        ['openDay' => 'MONDAY', 'openTime' => ['hours' => 8, 'minutes' => 30], 'closeDay' => 'MONDAY', 'closeTime' => ['hours' => 18]],
+        ['openDay' => 'FRIDAY', 'openTime' => [], 'closeDay' => 'FRIDAY', 'closeTime' => ['hours' => 24]],
+        ['openDay' => 'SUNDAY', 'openTime' => ['hours' => 20], 'closeDay' => 'SUNDAY', 'closeTime' => ['hours' => 24]],
+    ]]],
+    'a day more' => ['regularHours', ['periods' => [
+        ['openDay' => 'MONDAY', 'openTime' => ['hours' => 8, 'minutes' => 30], 'closeDay' => 'MONDAY', 'closeTime' => ['hours' => 17]],
+        ['openDay' => 'TUESDAY', 'openTime' => ['hours' => 8, 'minutes' => 30], 'closeDay' => 'TUESDAY', 'closeTime' => ['hours' => 17]],
+        ['openDay' => 'FRIDAY', 'openTime' => [], 'closeDay' => 'FRIDAY', 'closeTime' => ['hours' => 24]],
+        ['openDay' => 'SUNDAY', 'openTime' => ['hours' => 20], 'closeDay' => 'SUNDAY', 'closeTime' => ['hours' => 24]],
+    ]]],
+    'another day' => ['regularHours', ['periods' => [
+        ['openDay' => 'TUESDAY', 'openTime' => ['hours' => 8, 'minutes' => 30], 'closeDay' => 'TUESDAY', 'closeTime' => ['hours' => 17]],
+        ['openDay' => 'FRIDAY', 'openTime' => [], 'closeDay' => 'FRIDAY', 'closeTime' => ['hours' => 24]],
+        ['openDay' => 'SUNDAY', 'openTime' => ['hours' => 20], 'closeDay' => 'SUNDAY', 'closeTime' => ['hours' => 24]],
+    ]]],
+    'midnight that is not the next day' => ['regularHours', ['periods' => [
+        ['openDay' => 'MONDAY', 'openTime' => ['hours' => 8, 'minutes' => 30], 'closeDay' => 'MONDAY', 'closeTime' => ['hours' => 17]],
+        ['openDay' => 'FRIDAY', 'openTime' => [], 'closeDay' => 'FRIDAY', 'closeTime' => ['hours' => 24]],
+        ['openDay' => 'SUNDAY', 'openTime' => ['hours' => 20], 'closeDay' => 'TUESDAY', 'closeTime' => []],
+    ]]],
+    'next day but not midnight' => ['regularHours', ['periods' => [
+        ['openDay' => 'MONDAY', 'openTime' => ['hours' => 8, 'minutes' => 30], 'closeDay' => 'MONDAY', 'closeTime' => ['hours' => 17]],
+        ['openDay' => 'FRIDAY', 'openTime' => [], 'closeDay' => 'FRIDAY', 'closeTime' => ['hours' => 24]],
+        ['openDay' => 'SUNDAY', 'openTime' => ['hours' => 20], 'closeDay' => 'MONDAY', 'closeTime' => ['minutes' => 1]],
+    ]]],
+    'no hours' => ['regularHours', ['periods' => []]],
 ]);
 
 it('counts a field missing from the live listing as a change', function (): void {
@@ -71,15 +114,15 @@ it('counts a field missing from the live listing as a change', function (): void
 });
 
 it('never touches a field the content does not state, or one the sync does not own', function (): void {
-    // The content states only a title; the listing has more, including hours
-    $changed = ListingDiff::changedFields(['title' => 'Clinic', 'regularHours' => ['x']], ['title' => 'Old', 'websiteUri' => 'https://example.test/', 'regularHours' => ['y']]);
+    // The content states only a title; the listing has more, including regular and special hours
+    $changed = ListingDiff::changedFields(['title' => 'Clinic', 'specialHours' => ['x']], ['title' => 'Old', 'websiteUri' => 'https://example.test/', 'regularHours' => ['periods' => [['openDay' => 'MONDAY']]], 'specialHours' => ['y']]);
 
     expect($changed)->toBe(['title' => 'Clinic'])
-        ->and(ListingDiff::updateMask(['regularHours' => [], 'profile' => [], 'title' => 'x']))->toBe('title,profile');
+        ->and(ListingDiff::updateMask(['specialHours' => [], 'profile' => [], 'title' => 'x']))->toBe('title,profile');
 });
 
 it('names the changed fields in the owned order in the mask', function (): void {
-    expect(ListingDiff::updateMask(['profile' => [], 'categories' => [], 'title' => 'x', 'latlng' => []]))->toBe('title,latlng,categories,profile')
+    expect(ListingDiff::updateMask(['regularHours' => [], 'profile' => [], 'categories' => [], 'title' => 'x', 'latlng' => []]))->toBe('title,latlng,categories,profile,regularHours')
         ->and(ListingDiff::updateMask([]))->toBe('');
 });
 
@@ -131,3 +174,15 @@ it('compares additional categories by name alone, and counts a different name as
     expect(ListingDiff::changedFields($desired, $sameWithLabels))->toBe([])
         ->and(array_keys(ListingDiff::changedFields($desired, $otherName)))->toBe(['categories']);
 });
+
+it('counts a period whose opening day alone, or closing day alone, differs as a change', function (string $openDay, string $closeDay): void {
+    // An overnight span, Monday 22:00 to Tuesday 06:00
+    $desired = ['regularHours' => ['periods' => [['openDay' => 'MONDAY', 'openTime' => ['hours' => 22], 'closeDay' => 'TUESDAY', 'closeTime' => ['hours' => 6]]]]];
+    $live = ['regularHours' => ['periods' => [['openDay' => $openDay, 'openTime' => ['hours' => 22], 'closeDay' => $closeDay, 'closeTime' => ['hours' => 6]]]]];
+
+    expect(ListingDiff::changedFields($desired, $live))->toBe($desired)
+        ->and(ListingDiff::changedFields($desired, $desired))->toBe([]);
+})->with([
+    'opening day' => ['SUNDAY', 'TUESDAY'],
+    'closing day' => ['MONDAY', 'WEDNESDAY'],
+]);

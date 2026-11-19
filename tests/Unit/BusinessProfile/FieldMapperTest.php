@@ -522,3 +522,56 @@ it('decodes entities in every title it sends or writes into an address line', fu
         ->and($provider->fields['storefrontAddress'])->toMatchArray(['addressLines' => ['4301 W Markham St', 'Outpatient Center', 'Heart & Vascular', 'Cardio & Rehab']])
         ->and($provider->fields['profile'])->toBe(['description' => 'Dr. Jane Doe is a health care provider at Cardio & Rehab employed by UAMS Health.']);
 });
+
+/**
+ * A weekday rule from 8:00 to 17:00 and a closed Saturday, as the replicator stores them.
+ *
+ * @return list<array<string, mixed>>
+ */
+function weekdayHours(): array
+{
+    return [
+        ['type' => 'weekday', 'days' => ['monday', 'tuesday', 'wednesday', 'thursday', 'friday'], 'service_mode' => 'in_person', 'status' => 'open', 'time_span' => [['type' => 'new_set', 'open' => '08:00', 'close' => '17:00']]],
+        ['type' => 'custom', 'days' => ['saturday'], 'service_mode' => 'in_person', 'status' => 'closed'],
+    ];
+}
+
+it('writes a location regular hours, and gives a provider there the same hours', function (): void {
+    $location = locationEntry(values: ['regular_hours' => weekdayHours(), 'hours_variable_query' => false]);
+    $item = mapper()->locationItem($location, mapperSilos());
+    $provider = mapper()->providerItems(personEntry(), [$location], mapperSilos())[0];
+
+    $periods = Values::arrays(Values::arr($item->fields['regularHours'] ?? null)['periods'] ?? null);
+    expect(array_column($periods, 'openDay'))->toBe(['MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY'])
+        ->and($periods[0])->toBe(['openDay' => 'MONDAY', 'openTime' => ['hours' => 8, 'minutes' => 0], 'closeDay' => 'MONDAY', 'closeTime' => ['hours' => 17, 'minutes' => 0]])
+        ->and($provider->fields['regularHours'])->toBe($item->fields['regularHours']);
+});
+
+it('writes no hours for a location with none, or marked as having variable hours, and leaves its other fields as they were', function (array $values): void {
+    $plain = mapper()->locationItem(locationEntry(), mapperSilos());
+    $item = mapper()->locationItem(locationEntry(values: $values), mapperSilos());
+    $provider = mapper()->providerItems(personEntry(), [locationEntry(values: $values)], mapperSilos())[0];
+
+    expect($item->fields)->toBe($plain->fields)
+        ->and($item->fields)->not->toHaveKey('regularHours')
+        ->and($provider->fields)->not->toHaveKey('regularHours');
+})->with([
+    'no rules' => [['regular_hours' => []]],
+    'only closed days' => [['regular_hours' => [weekdayHours()[1]]]],
+    'variable, with rules left over' => [['regular_hours' => weekdayHours(), 'hours_variable_query' => true]],
+]);
+
+it('reads a child location hours from the child, never its parent', function (): void {
+    $parent = locationEntry('main-campus', 'Main Campus', ['regular_hours' => weekdayHours()]);
+    $child = locationEntry('cardiology', 'Cardiology', [], $parent);
+
+    expect(mapper()->locationItem($child, mapperSilos())->fields)->not->toHaveKey('regularHours')
+        ->and(mapper()->providerItems(personEntry(), [$child], mapperSilos())[0]->fields)->not->toHaveKey('regularHours');
+});
+
+it('reads hours through the handles the configuration names', function (): void {
+    $location = locationEntry(values: ['hours' => weekdayHours(), 'varies' => true, 'regular_hours' => [], 'hours_variable_query' => false]);
+
+    expect(mapper(['regular_hours' => 'hours', 'hours_variable' => 'other'])->locationItem($location, mapperSilos())->fields)->toHaveKey('regularHours')
+        ->and(mapper(['regular_hours' => 'hours', 'hours_variable' => 'varies'])->locationItem($location, mapperSilos())->fields)->not->toHaveKey('regularHours');
+});
