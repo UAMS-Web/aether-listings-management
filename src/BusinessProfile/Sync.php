@@ -27,8 +27,9 @@ final class Sync
      * @param  Silos  $silos  The silos and their modes.
      * @param  ListingIndex  $index  Every listing the credentials can see.
      * @param  ?Closure(Outcome): void  $logger  Receives each outcome, except an off silo's skip, which says nothing the settings do not.
+     * @param  ?string  $today  Today, `YYYY-MM-DD`, for comparing special hours; by default today in SpecialHours::TIMEZONE.
      */
-    public function __construct(private readonly Client $client, private readonly Silos $silos, private readonly ListingIndex $index, private readonly ?Closure $logger = null) {}
+    public function __construct(private readonly Client $client, private readonly Silos $silos, private readonly ListingIndex $index, private readonly ?Closure $logger = null, private readonly ?string $today = null) {}
 
     /**
      * Decide and, where the silo is live, carry out one action per item.
@@ -124,7 +125,7 @@ final class Sync
             return new Outcome($item, $mode, Action::Review, 'Store code is on a listing Google created without a name');
         }
 
-        $changed = ListingDiff::changedFields($item->fields, $listing);
+        $changed = ListingDiff::changedFields($item->fields, $listing, $this->today ?? SpecialHours::today());
 
         // Read the live attributes only when the content states some, so a provider item costs no call
         try {

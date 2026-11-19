@@ -114,11 +114,11 @@ it('counts a field missing from the live listing as a change', function (): void
 });
 
 it('never touches a field the content does not state, or one the sync does not own', function (): void {
-    // The content states only a title; the listing has more, including regular and special hours
-    $changed = ListingDiff::changedFields(['title' => 'Clinic', 'specialHours' => ['x']], ['title' => 'Old', 'websiteUri' => 'https://example.test/', 'regularHours' => ['periods' => [['openDay' => 'MONDAY']]], 'specialHours' => ['y']]);
+    // The content states only a title, and labels the sync does not own; the listing has more, including regular hours
+    $changed = ListingDiff::changedFields(['title' => 'Clinic', 'labels' => ['x']], ['title' => 'Old', 'websiteUri' => 'https://example.test/', 'regularHours' => ['periods' => [['openDay' => 'MONDAY']]], 'labels' => ['y']]);
 
     expect($changed)->toBe(['title' => 'Clinic'])
-        ->and(ListingDiff::updateMask(['specialHours' => [], 'profile' => [], 'title' => 'x']))->toBe('title,profile');
+        ->and(ListingDiff::updateMask(['labels' => [], 'profile' => [], 'title' => 'x']))->toBe('title,profile');
 });
 
 it('names the changed fields in the owned order in the mask', function (): void {
@@ -186,3 +186,59 @@ it('counts a period whose opening day alone, or closing day alone, differs as a 
     'opening day' => ['SUNDAY', 'TUESDAY'],
     'closing day' => ['MONDAY', 'WEDNESDAY'],
 ]);
+
+/**
+ * A special hours field from its periods.
+ *
+ * @param  list<array<string, mixed>>  $periods
+ * @return array<string, mixed>
+ */
+function specialField(array $periods): array
+{
+    return ['specialHours' => ['specialHourPeriods' => $periods]];
+}
+
+it('finds no special hours change across Google formatting, order and past dates', function (): void {
+    $desired = specialField([
+        ['startDate' => ['year' => 2026, 'month' => 11, 'day' => 26], 'closed' => true],
+        ['startDate' => ['year' => 2026, 'month' => 11, 'day' => 27], 'openTime' => ['hours' => 0, 'minutes' => 0], 'endDate' => ['year' => 2026, 'month' => 11, 'day' => 27], 'closeTime' => ['hours' => 12, 'minutes' => 30]],
+    ]);
+    // Google's order, no end date, midnight as {}, closed said false, times on a closed date, and a date before today
+    $live = specialField([
+        ['startDate' => ['year' => 2026, 'month' => 11, 'day' => 27], 'closed' => false, 'openTime' => [], 'closeTime' => ['hours' => 12, 'minutes' => 30]],
+        ['startDate' => ['year' => 2026, 'month' => 11, 'day' => 26], 'closed' => true, 'openTime' => ['hours' => 9]],
+        ['startDate' => ['year' => 2026, 'month' => 11, 'day' => 19], 'closed' => true],
+    ]);
+
+    expect(ListingDiff::changedFields($desired, $live, '2026-11-20'))->toBe([])
+        ->and(ListingDiff::changedFields($desired, $live))->toBe($desired);
+});
+
+it('counts a special hours difference as a change', function (array $live): void {
+    $desired = specialField([['startDate' => ['year' => 2026, 'month' => 11, 'day' => 27], 'openTime' => ['hours' => 22, 'minutes' => 0], 'endDate' => ['year' => 2026, 'month' => 11, 'day' => 28], 'closeTime' => ['hours' => 6, 'minutes' => 30]]]);
+
+    expect(ListingDiff::changedFields($desired, $live, '2026-11-20'))->toBe($desired);
+})->with([
+    'none on the listing' => [[]],
+    'another date' => [specialField([['startDate' => ['year' => 2026, 'month' => 11, 'day' => 26], 'openTime' => ['hours' => 22], 'endDate' => ['year' => 2026, 'month' => 11, 'day' => 27], 'closeTime' => ['hours' => 6, 'minutes' => 30]]])],
+    'another month' => [specialField([['startDate' => ['year' => 2026, 'month' => 12, 'day' => 27], 'openTime' => ['hours' => 22], 'endDate' => ['year' => 2026, 'month' => 11, 'day' => 28], 'closeTime' => ['hours' => 6, 'minutes' => 30]]])],
+    'another year' => [specialField([['startDate' => ['year' => 2027, 'month' => 11, 'day' => 27], 'openTime' => ['hours' => 22], 'endDate' => ['year' => 2026, 'month' => 11, 'day' => 28], 'closeTime' => ['hours' => 6, 'minutes' => 30]]])],
+    'closed' => [specialField([['startDate' => ['year' => 2026, 'month' => 11, 'day' => 27], 'closed' => true]])],
+    'opening' => [specialField([['startDate' => ['year' => 2026, 'month' => 11, 'day' => 27], 'openTime' => ['hours' => 21], 'endDate' => ['year' => 2026, 'month' => 11, 'day' => 28], 'closeTime' => ['hours' => 6, 'minutes' => 30]]])],
+    'end date' => [specialField([['startDate' => ['year' => 2026, 'month' => 11, 'day' => 27], 'openTime' => ['hours' => 22], 'closeTime' => ['hours' => 6, 'minutes' => 30]]])],
+    'closing' => [specialField([['startDate' => ['year' => 2026, 'month' => 11, 'day' => 27], 'openTime' => ['hours' => 22], 'endDate' => ['year' => 2026, 'month' => 11, 'day' => 28], 'closeTime' => ['hours' => 6]]])],
+    'a date more' => [specialField([
+        ['startDate' => ['year' => 2026, 'month' => 11, 'day' => 27], 'openTime' => ['hours' => 22], 'endDate' => ['year' => 2026, 'month' => 11, 'day' => 28], 'closeTime' => ['hours' => 6, 'minutes' => 30]],
+        ['startDate' => ['year' => 2026, 'month' => 11, 'day' => 20], 'closed' => true],
+    ])],
+]);
+
+it('reads an empty special hours set as clearing the listing future periods, and as matching none or only past ones', function (): void {
+    $none = specialField([]);
+
+    expect(ListingDiff::changedFields($none, [], '2026-11-20'))->toBe([])
+        ->and(ListingDiff::changedFields($none, ['specialHours' => []], '2026-11-20'))->toBe([])
+        ->and(ListingDiff::changedFields($none, specialField([['startDate' => ['year' => 2026, 'month' => 11, 'day' => 19], 'closed' => true]]), '2026-11-20'))->toBe([])
+        ->and(ListingDiff::changedFields($none, specialField([['startDate' => ['year' => 2026, 'month' => 11, 'day' => 20], 'closed' => true]]), '2026-11-20'))->toBe($none)
+        ->and(ListingDiff::updateMask(['specialHours' => [], 'regularHours' => []]))->toBe('regularHours,specialHours');
+});

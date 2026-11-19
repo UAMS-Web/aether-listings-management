@@ -82,6 +82,8 @@ return [
             // The weekly hours rules, and the toggle marking hours that vary (which writes none)
             'regular_hours' => 'regular_hours',
             'hours_variable' => 'hours_variable_query',
+            // Holiday hours and temporary changes, which the host passes already merged with the system-wide closures the location honors
+            'special_hours' => 'special_hours',
             // Radio fields answering true, false or not applicable => Business Profile attribute
             'attributes' => [
                 'google_business_profile_has_wheelchair_accessible_entrance' => 'has_wheelchair_accessible_entrance',
