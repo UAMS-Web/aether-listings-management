@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace UAMSWeb\Aether\People\ListingsManagement\BusinessProfile;
 
+use DateInterval;
 use DateTimeImmutable;
 use DateTimeInterface;
 use DateTimeZone;
@@ -27,7 +28,8 @@ use DateTimeZone;
  *   and telemedicine rules are skipped. A closed date is `closed: true`. A
  *   period must be under 24 hours, so open all day is 00:00 to 23:59, a span
  *   past midnight closes the next day no later than 11:59, and a span that
- *   closes the minute it opens is dropped.
+ *   closes the minute it opens (read as running past midnight, as regular
+ *   hours read it) closes a minute earlier the next day, by 11:59.
  */
 final class SpecialHours
 {
@@ -60,7 +62,7 @@ final class SpecialHours
      */
     public static function fromRows(mixed $rows, string $today): array
     {
-        $last = new DateTimeImmutable($today)->modify('+'.(self::HORIZON_DAYS - 1).' days')->format('Y-m-d');
+        $last = new DateTimeImmutable($today)->add(new DateInterval('P'.(self::HORIZON_DAYS - 1).'D'))->format('Y-m-d');
         $rows = RegularHours::enabled($rows);
 
         // Date => the spans it is open, or none when closed; temporary changes first, so a holiday overrides them
@@ -89,11 +91,7 @@ final class SpecialHours
             }
 
             foreach ($spans as [$open, $close]) {
-                $period = self::period((string) $date, $open, $close);
-
-                if ($period !== null) {
-                    $periods[] = $period;
-                }
+                $periods[] = self::period($date, $open, $close);
             }
         }
 
@@ -111,11 +109,11 @@ final class SpecialHours
             return $value->format('Y-m-d');
         }
 
-        if (preg_match('/^(\d{4})-(\d\d)-(\d\d)(?:$|[ T])/', trim(Values::str($value)), $matches) !== 1) {
+        if (preg_match('/^(?<year>\d{4})-(?<month>\d\d)-(?<day>\d\d)(?:$|[ T])/', trim(Values::str($value)), $matches) !== 1) {
             return null;
         }
 
-        return checkdate((int) $matches[2], (int) $matches[3], (int) $matches[1]) ? $matches[1].'-'.$matches[2].'-'.$matches[3] : null;
+        return checkdate((int) $matches['month'], (int) $matches['day'], (int) $matches['year']) ? $matches['year'].'-'.$matches['month'].'-'.$matches['day'] : null;
     }
 
     /**
@@ -199,19 +197,15 @@ final class SpecialHours
     }
 
     /**
-     * One open period on a date, or null when Business Profile could not take it.
+     * One open period on a date, kept under 24 hours.
      *
      * @param  string  $date  The date it opens, `YYYY-MM-DD`.
      * @param  int  $open  Opening, in minutes from midnight.
      * @param  int  $close  Closing, in minutes from midnight, up to 1440.
-     * @return ?array<string, mixed>
+     * @return array<string, mixed>
      */
-    private static function period(string $date, int $open, int $close): ?array
+    private static function period(string $date, int $open, int $close): array
     {
-        if ($open === $close) {
-            return null;
-        }
-
         // Open all day is one minute short of 24 hours
         if ($open === 0 && $close === self::DAY_END) {
             $close = self::DAY_END - 1;
@@ -219,9 +213,10 @@ final class SpecialHours
 
         $endDate = $date;
 
-        if ($close < $open) {
+        // Past midnight: closing the minute it opens would be 24 hours, so it closes a minute sooner
+        if ($close <= $open) {
             $endDate = new DateTimeImmutable($date)->modify('+1 day')->format('Y-m-d');
-            $close = min($close, self::LAST_NEXT_DAY_CLOSE);
+            $close = min($close === $open ? $open - 1 : $close, self::LAST_NEXT_DAY_CLOSE);
         }
 
         return [

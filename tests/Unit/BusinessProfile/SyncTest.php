@@ -518,7 +518,7 @@ it('reports each listing whose live special hours differ in a dry run, including
     [$differs, $matches] = $run['outcomes'];
 
     expect($differs->action)->toBe(Action::Update)
-        ->and($differs->reason)->toBe('Dry run, no write made')
+        ->and($differs->reason)->toBe("Dry run, no write made; replaces the listing's special hours on 2026-11-27")
         ->and($differs->fields)->toBe(['specialHours'])
         ->and($matches->action)->toBe(Action::Noop)
         ->and($run['transport']->writes())->toBe([]);
@@ -529,11 +529,12 @@ it('clears a deleted closure from a live listing with a mask naming special hour
     $writes = $run['transport']->writes();
 
     expect($writes)->toHaveCount(1)
+        ->and($run['outcomes'][0]->reason)->toBe("Updated; replaces the listing's special hours on 2026-11-26")
         ->and($writes[0]['url'])->toBe('https://mybusinessbusinessinformation.googleapis.com/v1/locations/1?updateMask=specialHours')
         ->and($writes[0]['body'])->toBe('{"specialHours":{"specialHourPeriods":[]}}');
 });
 
-it('compares special hours against today in the hours time zone when none is given', function (): void {
+it('compares special hours against the real today when none is given', function (): void {
     // A closure dated before every real today: past, so it matches an empty set
     $fields = syncFields() + ['regularHours' => syncHours(), 'specialHours' => syncClosures()];
     $listing = syncListing(fields: syncFields() + ['regularHours' => syncHours(), 'specialHours' => ['specialHourPeriods' => [['startDate' => ['year' => 2020, 'month' => 1, 'day' => 1], 'closed' => true]]]]);
@@ -541,4 +542,19 @@ it('compares special hours against today in the hours time zone when none is giv
 
     expect(runSync([syncItem(fields: $fields)], [$listing], today: null)['outcomes'][0]->action)->toBe(Action::Noop)
         ->and(runSync([syncItem(fields: $fields)], [$future], today: null)['outcomes'][0]->action)->toBe(Action::Update);
+});
+
+it('names no replaced dates when only the regular hours change, or when special hours only gain a date', function (): void {
+    $fields = syncFields() + ['regularHours' => syncHours(), 'specialHours' => syncClosures(26, 27)];
+    $regular = runSync([syncItem(fields: $fields)], [syncListing(fields: syncFields() + ['regularHours' => syncHours(9), 'specialHours' => syncClosures(26, 27)])]);
+    $gained = runSync([syncItem(fields: $fields)], [syncListing(fields: syncFields() + ['regularHours' => syncHours(), 'specialHours' => syncClosures(26)])]);
+
+    expect($regular['outcomes'][0]->reason)->toBe('Updated')
+        ->and($gained['outcomes'][0]->reason)->toBe('Updated');
+});
+
+it('creates a listing with its special hours beside its regular hours', function (): void {
+    $run = runSync([syncItem(fields: syncFields() + ['regularHours' => syncHours(), 'specialHours' => syncClosures(26)])]);
+
+    expect(json_decode((string) $run['transport']->writes()[0]['body'], true))->toMatchArray(['regularHours' => syncHours(), 'specialHours' => syncClosures(26)]);
 });

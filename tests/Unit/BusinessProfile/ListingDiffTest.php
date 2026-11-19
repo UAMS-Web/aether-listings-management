@@ -242,3 +242,30 @@ it('reads an empty special hours set as clearing the listing future periods, and
         ->and(ListingDiff::changedFields($none, specialField([['startDate' => ['year' => 2026, 'month' => 11, 'day' => 20], 'closed' => true]]), '2026-11-20'))->toBe($none)
         ->and(ListingDiff::updateMask(['specialHours' => [], 'regularHours' => []]))->toBe('regularHours,specialHours');
 });
+
+it('reads a special period closing at 00:00 the next day as closing at 24:00 on its own', function (): void {
+    $desired = specialField([['startDate' => ['year' => 2026, 'month' => 12, 'day' => 31], 'openTime' => ['hours' => 18, 'minutes' => 0], 'endDate' => ['year' => 2026, 'month' => 12, 'day' => 31], 'closeTime' => ['hours' => 24, 'minutes' => 0]]]);
+    $nextDay = specialField([['startDate' => ['year' => 2026, 'month' => 12, 'day' => 31], 'openTime' => ['hours' => 18], 'endDate' => ['year' => 2027, 'month' => 1, 'day' => 1], 'closeTime' => []]]);
+    $twoDays = specialField([['startDate' => ['year' => 2026, 'month' => 12, 'day' => 31], 'openTime' => ['hours' => 18], 'endDate' => ['year' => 2027, 'month' => 1, 'day' => 2], 'closeTime' => []]]);
+    $notMidnight = specialField([['startDate' => ['year' => 2026, 'month' => 12, 'day' => 31], 'openTime' => ['hours' => 18], 'endDate' => ['year' => 2027, 'month' => 1, 'day' => 1], 'closeTime' => ['minutes' => 1]]]);
+
+    expect(ListingDiff::changedFields($desired, $nextDay, '2026-11-20'))->toBe([])
+        ->and(ListingDiff::changedFields($desired, $twoDays, '2026-11-20'))->toBe($desired)
+        ->and(ListingDiff::changedFields($desired, $notMidnight, '2026-11-20'))->toBe($desired);
+});
+
+it('names the dates from today on whose listing special hours the content would replace', function (): void {
+    $desired = specialField([['startDate' => ['year' => 2026, 'month' => 11, 'day' => 26], 'closed' => true]]);
+    $live = specialField([
+        ['startDate' => ['year' => 2026, 'month' => 11, 'day' => 25], 'openTime' => ['hours' => 9], 'closeTime' => ['hours' => 10]],
+        ['startDate' => ['year' => 2026, 'month' => 11, 'day' => 27], 'openTime' => ['hours' => 9], 'closeTime' => ['hours' => 10]],
+        ['startDate' => ['year' => 2026, 'month' => 11, 'day' => 27], 'openTime' => ['hours' => 11], 'closeTime' => ['hours' => 12]],
+        ['startDate' => ['year' => 2026, 'month' => 11, 'day' => 26], 'closed' => true],
+        ['startDate' => ['year' => 2026, 'month' => 11, 'day' => 25], 'closed' => true],
+        ['startDate' => ['year' => 2026, 'month' => 11, 'day' => 19], 'closed' => true],
+    ]);
+
+    expect(ListingDiff::replacedSpecialDates($desired, $live, '2026-11-20'))->toBe(['2026-11-25', '2026-11-27'])
+        ->and(ListingDiff::replacedSpecialDates([], $live, '2026-11-20'))->toBe([])
+        ->and(ListingDiff::replacedSpecialDates($desired, [], '2026-11-20'))->toBe([]);
+});

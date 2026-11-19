@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace UAMSWeb\Aether\People\ListingsManagement\BusinessProfile;
 
+use DateTimeImmutable;
+
 /**
  * Which of a listing's fields and attributes differ from what the content says.
  *
@@ -168,7 +170,7 @@ final class ListingDiff
     }
 
     /**
-     * Special hours from today on, as each period's date, whether it is closed, and its times and end date when open, sorted.
+     * Special hours from today on, as each period's date alone when it is closed, or its date, times and end date when open, sorted.
      *
      * A period with no end date ends on its start date, and a closed period's
      * times are ignored, as Business Profile reads them.
@@ -188,14 +190,53 @@ final class ListingDiff
                 continue;
             }
 
-            $periods[] = ($period['closed'] ?? false) === true
-                ? [$start, true]
-                : [$start, false, self::clock($period['openTime'] ?? null), self::dateText($period['endDate'] ?? $period['startDate'] ?? null), self::clock($period['closeTime'] ?? null)];
+            if (($period['closed'] ?? false) === true) {
+                $periods[] = [$start];
+
+                continue;
+            }
+
+            $end = self::dateText($period['endDate'] ?? $period['startDate'] ?? null);
+            $close = self::clock($period['closeTime'] ?? null);
+
+            // Midnight starting the next day is 24:00 ending this one
+            if ($close === [0, 0] && $end === new DateTimeImmutable($start)->modify('+1 day')->format('Y-m-d')) {
+                $end = $start;
+                $close = [24, 0];
+            }
+
+            $periods[] = [$start, self::clock($period['openTime'] ?? null), $end, $close];
         }
 
         sort($periods);
 
         return $periods;
+    }
+
+    /**
+     * The dates from today on where the listing has special hours the content does not, which a write would replace.
+     *
+     * @param  array<string, mixed>  $desired  Fields from the field mapper.
+     * @param  array<array-key, mixed>  $live  The live listing.
+     * @param  string  $today  Today, `YYYY-MM-DD`.
+     * @return list<string> `YYYY-MM-DD` dates, in order; empty when the content does not state special hours.
+     */
+    public static function replacedSpecialDates(array $desired, array $live, string $today): array
+    {
+        if (! array_key_exists('specialHours', $desired)) {
+            return [];
+        }
+
+        $kept = self::normalizeSpecialHours(Values::arr($desired['specialHours']), $today);
+        $dates = [];
+
+        foreach (self::normalizeSpecialHours(Values::arr($live['specialHours'] ?? null), $today) as $period) {
+            if (! in_array($period, $kept, true)) {
+                $dates[] = Values::str($period[0]);
+            }
+        }
+
+        return array_values(array_unique($dates));
     }
 
     /**
@@ -207,7 +248,7 @@ final class ListingDiff
     {
         $date = Values::arr($date);
 
-        return sprintf('%04d-%02d-%02d', (int) Values::str($date['year'] ?? null), (int) Values::str($date['month'] ?? null), (int) Values::str($date['day'] ?? null));
+        return sprintf('%04d-%02d-%02d', Values::str($date['year'] ?? null), Values::str($date['month'] ?? null), Values::str($date['day'] ?? null));
     }
 
     /**

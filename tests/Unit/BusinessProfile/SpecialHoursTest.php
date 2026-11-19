@@ -130,13 +130,13 @@ it('writes nothing for no rows', function (mixed $rows): void {
 ]);
 
 it('writes a holiday range one date at a time, with each span of an open rule', function (): void {
-    $rows = [holidayRow([holidayRule('2026-11-27', '2026-11-28', 'open', [['08:00', '11:30'], ['13:00', '16:00']])])];
+    $rows = [holidayRow([holidayRule('2026-11-27', '2026-11-28', 'open', [['08:00', '11:30'], ['13:50', '16:00']])])];
 
     expect(specialPeriods($rows))->toBe([
         openPeriod([2026, 11, 27], 8, 0, [2026, 11, 27], 11, 30),
-        openPeriod([2026, 11, 27], 13, 0, [2026, 11, 27], 16, 0),
+        openPeriod([2026, 11, 27], 13, 50, [2026, 11, 27], 16, 0),
         openPeriod([2026, 11, 28], 8, 0, [2026, 11, 28], 11, 30),
-        openPeriod([2026, 11, 28], 13, 0, [2026, 11, 28], 16, 0),
+        openPeriod([2026, 11, 28], 13, 50, [2026, 11, 28], 16, 0),
     ]);
 });
 
@@ -211,15 +211,15 @@ it('skips telemedicine rules, rows and rules turned off, rules with no date, and
     $rows = [
         holidayRow([holidayRule('2026-11-26', extra: ['service_mode' => ' telemedicine '])]),
         holidayRow([holidayRule('2026-11-27')], ['enabled' => false]),
-        holidayRow([holidayRule('2026-11-28', extra: ['enabled' => false]), holidayRule(''), holidayRule('2026-02-30')]),
-        changeRow('2026-11-23', '2026-11-29', [weeklyRule(['monday'], extra: ['service_mode' => 'telemedicine']), weeklyRule(['tuesday'], extra: ['enabled' => false])]),
+        holidayRow([holidayRule('2026-11-28', extra: ['enabled' => false]), holidayRule(''), holidayRule('2026-02-30'), holidayRule('2026-11-30', extra: ['service_mode' => 'telemedicine']), holidayRule('2026-12-03')]),
+        changeRow('2026-11-23', '2026-11-29', [weeklyRule(['monday'], extra: ['service_mode' => 'telemedicine']), weeklyRule(['tuesday'], extra: ['enabled' => false]), weeklyRule(['thursday'], 'open', [['', '']]), weeklyRule(['saturday'], 'closed', [])]),
         changeRow('2026-11-23', '2026-11-29', [weeklyRule(['wednesday'])], ['enabled' => false]),
         holidayRow([holidayRule('2026-11-29')], ['type' => 'other']),
         holidayRow([holidayRule('2026-12-01')], ['type' => ' holiday ']),
         changeRow('2026-12-02', '2026-12-02', [weeklyRule(['wednesday'])], ['type' => ' temporary_change ']),
     ];
 
-    expect(specialDates($rows))->toBe(['2026-12-01', '2026-12-02']);
+    expect(specialDates($rows))->toBe(['2026-11-28', '2026-12-01', '2026-12-02', '2026-12-03']);
 });
 
 it('writes open all day as 00:00 to 23:59, from the status or from a span of 00:00 to 00:00', function (): void {
@@ -245,9 +245,14 @@ it('closes a span past midnight on the next date, no later than 11:59, across a 
     ]);
 });
 
-it('drops a span that closes the minute it opens, keeping the others on its date', function (): void {
-    expect(specialPeriods([holidayRow([holidayRule('2026-11-26', status: 'open', spans: [['08:00', '08:00'], ['09:00', '10:00']])])]))
-        ->toBe([openPeriod([2026, 11, 26], 9, 0, [2026, 11, 26], 10, 0)]);
+it('closes a span that closes the minute it opens a minute sooner the next day, by 11:59', function (): void {
+    expect(specialPeriods([holidayRow([
+        holidayRule('2026-11-26', status: 'open', spans: [['08:00', '08:00']]),
+        holidayRule('2026-11-27', status: 'open', spans: [['13:00', '13:00']]),
+    ])]))->toBe([
+        openPeriod([2026, 11, 26], 8, 0, [2026, 11, 27], 7, 59),
+        openPeriod([2026, 11, 27], 13, 0, [2026, 11, 28], 11, 59),
+    ]);
 });
 
 it('reads a date as text with or without a time, or as a date object', function (mixed $value, ?string $expected): void {
