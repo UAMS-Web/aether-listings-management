@@ -142,7 +142,7 @@ it('closes a span that ends before it opens on the next day, Sunday into Monday'
         ]]);
 });
 
-it('drops a span without two usable, different times, and keeps the good ones', function (string $open, string $close): void {
+it('drops a span without two usable times, and keeps the good ones', function (string $open, string $close): void {
     expect(RegularHours::fromRules([hoursRule(['monday'], spans: [[$open, $close], ['13:00', '17:00']])]))
         ->toBe(['periods' => [hoursPeriod('MONDAY', 13, 0, 'MONDAY', 17, 0)]]);
 })->with([
