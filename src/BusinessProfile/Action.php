@@ -26,4 +26,7 @@ enum Action: string
 
     /** A call to Google failed. */
     case Error = 'error';
+
+    /** A create waits: Google refused one for the day, or the daily budget is spent. The outcome says when it may go. */
+    case Deferred = 'deferred';
 }

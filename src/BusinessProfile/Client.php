@@ -226,18 +226,17 @@ final class Client
      *
      * The request ID is derived from the store code, so Google recognizes a retry
      * of the same creation as the same request rather than a second listing.
+     * There is no validate-only create: Google counts a validation against the
+     * daily create limit, so checking first would spend the quota twice.
      *
      * @param  string  $account  The account group, `accounts/123`.
      * @param  array<string, mixed>  $fields  Field values keyed by Business Profile field name.
      * @param  string  $storeCode  The listing's store code.
-     * @param  bool  $validateOnly  Ask Google to check the request without applying it.
      * @return array<array-key, mixed> The new listing, with its resource name.
      */
-    public function create(string $account, array $fields, string $storeCode, bool $validateOnly = false): array
+    public function create(string $account, array $fields, string $storeCode): array
     {
-        $query = ['requestId' => self::requestId($storeCode)] + ($validateOnly ? ['validateOnly' => 'true'] : []);
-
-        return $this->request('POST', self::INFO_URL.'/'.$account.'/locations', $query, $fields + ['storeCode' => $storeCode, 'languageCode' => 'en']);
+        return $this->request('POST', self::INFO_URL.'/'.$account.'/locations', ['requestId' => self::requestId($storeCode)], $fields + ['storeCode' => $storeCode, 'languageCode' => 'en']);
     }
 
     /**

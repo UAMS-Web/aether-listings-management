@@ -188,12 +188,12 @@ it('patches only the given fields with their mask, and validates only when asked
         ->and($second['url'])->toBe('https://mybusinessbusinessinformation.googleapis.com/v1/locations/7?updateMask=title&validateOnly=true');
 });
 
-it('creates in the account group with the store code and a request ID stable per store code', function (): void {
+it('creates in the account group with the store code and a request ID stable per store code, and never as a validation', function (): void {
     // Create twice with one code and once with another
     $transport = new FakeTransport;
     $client = clientWith($transport);
     $client->create('accounts/5', ['title' => 'Clinic'], 'clinic');
-    $client->create('accounts/5', ['title' => 'Clinic'], 'clinic', validateOnly: true);
+    $client->create('accounts/5', ['title' => 'Clinic'], 'clinic');
     $client->create('accounts/5', ['title' => 'Clinic'], 'other');
 
     // Expect the body to carry the code, and the ID to follow the code alone
@@ -201,7 +201,7 @@ it('creates in the account group with the store code and a request ID stable per
     expect($first['url'])->toBe('https://mybusinessbusinessinformation.googleapis.com/v1/accounts/5/locations?requestId='.Client::requestId('clinic'))
         ->and(Client::requestId('clinic'))->toBe('uamswp-'.substr(sha1('clinic'), 0, 32))
         ->and(json_decode((string) $first['body'], true))->toBe(['title' => 'Clinic', 'storeCode' => 'clinic', 'languageCode' => 'en'])
-        ->and($second['url'])->toEndWith('&validateOnly=true')
+        ->and($second['url'])->toBe($first['url'])
         ->and($third['url'])->not->toContain(Client::requestId('clinic'));
 });
 

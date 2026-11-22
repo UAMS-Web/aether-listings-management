@@ -15,14 +15,23 @@ use Closure;
  * anywhere, sends a store code found on two listings or in another group to
  * review, and never deletes. A listing it creates or updates is also sent each
  * photo whose address has not been sent to that listing before; a photo is only
- * ever added, never replaced or removed. A silo that is not live decides and reports the
- * same way and sends nothing. The client, the silos and the index are injected,
- * so none of it needs the framework or the network.
+ * ever added, never replaced or removed. A store code longer than Google allows
+ * goes to review without a call. Creates stop at the daily budget and pause
+ * after a per-day 429 until the next Pacific midnight, deferred rather than
+ * failed; updates go on. A silo that is not live decides and reports the
+ * same way and sends nothing. The client, the silos, the index and the create
+ * quota are injected, so none of it needs the framework or the network.
  */
 final class Sync
 {
     /** The fields a listing cannot be created without. */
     public const array REQUIRED_FOR_CREATE = ['title', 'storefrontAddress', 'categories'];
+
+    /** The longest store code Google takes, in characters. */
+    public const int STORE_CODE_LIMIT = 64;
+
+    /** The daily create limit and budget. */
+    private readonly CreateQuota $quota;
 
     /**
      * @param  Client  $client  The Business Profile client.
@@ -30,8 +39,12 @@ final class Sync
      * @param  ListingIndex  $index  Every listing the credentials can see.
      * @param  ?Closure(Outcome): void  $logger  Receives each outcome, except an off silo's skip, which says nothing the settings do not.
      * @param  ?string  $today  Today, `YYYY-MM-DD`, for comparing special hours; by default today in SpecialHours::TIMEZONE.
+     * @param  ?CreateQuota  $quota  The daily create limit and budget; by default the default budget, kept for this run only.
      */
-    public function __construct(private readonly Client $client, private readonly Silos $silos, private readonly ListingIndex $index, private readonly ?Closure $logger = null, private readonly ?string $today = null) {}
+    public function __construct(private readonly Client $client, private readonly Silos $silos, private readonly ListingIndex $index, private readonly ?Closure $logger = null, private readonly ?string $today = null, ?CreateQuota $quota = null)
+    {
+        $this->quota = $quota ?? new CreateQuota(new InMemoryCreateQuotaStore);
+    }
 
     /**
      * Decide and, where the silo is live, carry out one action per item.
@@ -81,6 +94,12 @@ final class Sync
         $account = $this->silos->account($item->silo, $item->kind);
         if ($account === '') {
             return new Outcome($item, $mode, Action::Skip, 'Silo '.$item->silo.' has no '.$item->kind->value.' account group');
+        }
+
+        // Google refuses a store code over its limit, so a person shortens it before anything is sent
+        $length = mb_strlen($item->storeCode, 'UTF-8');
+        if ($length > self::STORE_CODE_LIMIT) {
+            return new Outcome($item, $mode, Action::Review, 'Store code '.$item->storeCode.' is '.$length.' characters, over the '.self::STORE_CODE_LIMIT.' Google allows');
         }
 
         // The store code is the key: none anywhere is a create, two is for a person to sort out
@@ -209,8 +228,25 @@ final class Sync
             return new Outcome($item, $mode, Action::Create, 'Dry run, no listing created', $fields, $attributeNames, photos: $urls);
         }
 
+        // Wait while Google's daily limit is paused or today's budget is spent
+        $resumeAt = $this->quota->resumeAt();
+        if ($resumeAt !== null) {
+            $why = $this->quota->isPaused() ? "Creates paused by Google's daily create limit" : 'Daily create budget of '.$this->quota->budget().' spent';
+
+            return $this->deferred($item, $mode, $why, $resumeAt, $fields, $attributeNames, $urls);
+        }
+
+        $this->quota->recordCreate();
+
         try {
             $created = $this->client->create($account, $item->fields, $item->storeCode);
+        } catch (RateLimitedException $rateLimitedException) {
+            // A per-day refusal holds every create until the quota resets; a per-minute one is retried as usual
+            if ($rateLimitedException->daily) {
+                return $this->deferred($item, $mode, $rateLimitedException->getMessage(), $this->quota->pause(), $fields, $attributeNames, $urls);
+            }
+
+            return $this->failure($item, $mode, $rateLimitedException, '', $fields, $attributeNames, photos: $urls);
         } catch (ApiException $apiException) {
             return $this->failure($item, $mode, $apiException, '', $fields, $attributeNames, photos: $urls);
         }
@@ -270,6 +306,22 @@ final class Sync
         }
 
         return [$sent, $refused];
+    }
+
+    /**
+     * The outcome of a create that waits for the daily quota: not settled, and naming when it may go.
+     *
+     * @param  SyncItem  $item  The item.
+     * @param  Mode  $mode  The silo's mode.
+     * @param  string  $why  Why it waits.
+     * @param  int  $resumeAt  The Unix time it may go again.
+     * @param  list<string>  $fields  The fields it would write.
+     * @param  list<string>  $attributes  The attributes it would write.
+     * @param  list<string>  $photos  The addresses of the photos it would send.
+     */
+    private function deferred(SyncItem $item, Mode $mode, string $why, int $resumeAt, array $fields, array $attributes, array $photos): Outcome
+    {
+        return new Outcome($item, $mode, Action::Deferred, $why.'; creates resume at '.CreateQuota::format($resumeAt), $fields, $attributes, photos: $photos, resumeAt: $resumeAt);
     }
 
     /**
