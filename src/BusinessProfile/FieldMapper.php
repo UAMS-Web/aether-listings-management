@@ -25,6 +25,12 @@ namespace UAMSWeb\Aether\People\ListingsManagement\BusinessProfile;
  *   kind, so the sync leaves whatever hours its listings already have. A
  *   location that states regular hours always states its special hours, none
  *   included, so a closure deleted from the entry is cleared from the listing.
+ * - Every listing gets the configured logo. A location's cover is its featured
+ *   image and its other photos are its gallery; a provider's cover is the
+ *   wide portrait, and the location's wayfinding photo is added to it: as the
+ *   first other photo when the provider has a wide portrait, and as the cover
+ *   when not (UAMS-Web/uams-statamic#709, #129). A child location uses its
+ *   parent's image of each kind unless it overrides that kind.
  */
 final readonly class FieldMapper
 {
@@ -35,7 +41,7 @@ final readonly class FieldMapper
     public const int MAX_ADDITIONAL_CATEGORIES = 9;
 
     /**
-     * @param  array<array-key, mixed>  $config  The add-on's `mapping` setting: `location` and `provider` handles, `default_categories` and `tracking`.
+     * @param  array<array-key, mixed>  $config  The add-on's `mapping` setting: `location` and `provider` handles, `default_categories`, `tracking` and `logo`.
      * @param  ?string  $today  Today, `YYYY-MM-DD`, the first date special hours are written for; by default today in SpecialHours::TIMEZONE.
      */
     public function __construct(private array $config, private ?string $today = null) {}
@@ -131,6 +137,7 @@ final readonly class FieldMapper
             $fields + $categories + $this->website($location, self::locationStoreCode($location), Kind::Location) + $this->hours($location),
             $this->attributes($source),
             $unresolved,
+            $this->locationPhotos($location),
         );
     }
 
@@ -178,6 +185,7 @@ final readonly class FieldMapper
                 $fields + $categories + $this->website($person, $storeCode, Kind::Provider) + $this->hours($location),
                 [],
                 $unresolved,
+                $this->providerPhotos($person, $location),
             );
         }
 
@@ -274,6 +282,114 @@ final readonly class FieldMapper
             'regularHours' => $regular,
             'specialHours' => SpecialHours::fromRows($location->get($handles['special_hours'] ?? null), $this->today ?? SpecialHours::today()),
         ];
+    }
+
+    /**
+     * A location listing's photos: the logo, the cover and the other photos, in that order.
+     *
+     * @param  EntryData  $location  The location, with its parent attached when it is a child.
+     * @return list<Photo>
+     */
+    private function locationPhotos(EntryData $location): array
+    {
+        $photos = $this->logo();
+        $cover = self::addresses($this->ownOrParentImage($location, 'cover_photo'))[0] ?? '';
+
+        if ($cover !== '') {
+            $photos[] = new Photo(Photo::COVER, $cover);
+        }
+
+        foreach (self::addresses($this->ownOrParentImage($location, 'other_photos')) as $url) {
+            $photos[] = new Photo(Photo::ADDITIONAL, $url);
+        }
+
+        return $photos;
+    }
+
+    /**
+     * A provider listing's photos at one location: the logo, the wide portrait as the
+     * cover, and the location's wayfinding photo.
+     *
+     * The wayfinding photo is the first other photo when the provider has a wide
+     * portrait, and the cover when not. A location with no wayfinding photo leaves
+     * the provider's photos as they are.
+     *
+     * @param  EntryData  $person  The provider.
+     * @param  EntryData  $location  The location the listing is at, with its parent attached when it is a child.
+     * @return list<Photo>
+     */
+    private function providerPhotos(EntryData $person, EntryData $location): array
+    {
+        $photos = $this->logo();
+        $portrait = self::addresses($person->get($this->handles('provider')['cover_photo'] ?? null))[0] ?? '';
+        $wayfinding = self::addresses($this->ownOrParentImage($location, 'wayfinding_photo'))[0] ?? '';
+
+        if ($portrait !== '') {
+            $photos[] = new Photo(Photo::COVER, $portrait);
+        }
+
+        if ($wayfinding !== '') {
+            $photos[] = new Photo($portrait !== '' ? Photo::ADDITIONAL : Photo::COVER, $wayfinding);
+        }
+
+        return $photos;
+    }
+
+    /**
+     * The logo every listing gets, or none when no address is configured.
+     *
+     * @return list<Photo>
+     */
+    private function logo(): array
+    {
+        $logo = trim(Values::str($this->config['logo'] ?? null));
+
+        return $logo === '' ? [] : [new Photo(Photo::LOGO, $logo)];
+    }
+
+    /**
+     * A location's image of one kind: its own, or its parent's when it is a child that does not override that kind.
+     *
+     * A child overrides a kind only with both its image override and that kind's
+     * override on. An override with no image removes the parent's, as the
+     * location editor says.
+     *
+     * @param  EntryData  $location  The location, with its parent attached when it is a child.
+     * @param  string  $kind  The location handle naming the image field: `cover_photo`, `other_photos` or `wayfinding_photo`.
+     */
+    private function ownOrParentImage(EntryData $location, string $kind): mixed
+    {
+        $handles = $this->handles('location');
+        $handle = $handles[$kind] ?? null;
+        $overrides = $location->isOn($handles['photos_override'] ?? null) && $location->isOn($handles[$kind.'_override'] ?? null);
+
+        return $location->parent instanceof EntryData && ! $overrides ? $location->parent->get($handle) : $location->get($handle);
+    }
+
+    /**
+     * An image value as its public addresses, in order.
+     *
+     * An image is read as its address: a string, a list of strings, or an
+     * array, or list of arrays, carrying the address under `url`. Blank
+     * addresses are left out.
+     *
+     * @param  mixed  $value  An image field's value.
+     * @return list<string>
+     */
+    private static function addresses(mixed $value): array
+    {
+        $images = is_array($value) && array_is_list($value) ? $value : [$value];
+        $urls = [];
+
+        foreach ($images as $image) {
+            $url = trim(Values::str(is_array($image) ? $image['url'] ?? null : $image));
+
+            if ($url !== '') {
+                $urls[] = $url;
+            }
+        }
+
+        return $urls;
     }
 
     /**

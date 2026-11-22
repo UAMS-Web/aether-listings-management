@@ -11,7 +11,8 @@ use Closure;
  *
  * Signs in with an OAuth refresh token and reads account groups, listings,
  * categories and attributes, and writes a listing's fields (a patch with an
- * update mask), a new listing, and a listing's attributes. It never deletes.
+ * update mask), a new listing, a listing's attributes, and a photo added to a
+ * listing. It never deletes.
  * Every HTTP call goes through the injected transport, so the client runs the
  * same under the host's HTTP client and under a test's fake. It never logs or
  * returns a credential, and a failure names only its status and Google's message.
@@ -26,6 +27,9 @@ final class Client
 
     /** Where the account groups are listed. */
     private const string ACCOUNTS_URL = 'https://mybusinessaccountmanagement.googleapis.com/v1/accounts';
+
+    /** The older Google My Business API, which alone takes a listing's photos. */
+    private const string MEDIA_URL = 'https://mybusiness.googleapis.com/v4';
 
     /** The most pages one list is read to: 100,000 listings at 100 a page. */
     public const int MAX_PAGES = 1000;
@@ -288,6 +292,27 @@ final class Client
         }
 
         return $this->request('PATCH', self::INFO_URL.'/'.$listing.'/attributes', ['attributeMask' => implode(',', $names)], $body);
+    }
+
+    /**
+     * Add one photo to a listing, by its address, which Google fetches.
+     *
+     * The photo goes through the Google My Business v4 media endpoint, which
+     * addresses a listing under its account group. Nothing Google already holds
+     * is replaced or deleted: this only adds a photo.
+     *
+     * @param  string  $account  The account group the listing is in, `accounts/123`.
+     * @param  string  $listing  The listing's resource name, `locations/123`.
+     * @param  Photo  $photo  The photo: its category and address.
+     * @return array<array-key, mixed> The media item as Google returns it.
+     */
+    public function uploadPhoto(string $account, string $listing, Photo $photo): array
+    {
+        return $this->request('POST', self::MEDIA_URL.'/'.$account.'/'.$listing.'/media', [], [
+            'mediaFormat' => 'PHOTO',
+            'locationAssociation' => ['category' => $photo->category],
+            'sourceUrl' => $photo->url,
+        ]);
     }
 
     /**

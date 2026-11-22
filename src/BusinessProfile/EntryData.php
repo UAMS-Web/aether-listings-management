@@ -12,7 +12,8 @@ namespace UAMSWeb\Aether\People\ListingsManagement\BusinessProfile;
  * child location's parent attached. The mapper reads only this, through the
  * configured handles, so it never imports a Statamic class or the site's own.
  * A relationship value is expected already resolved: a brand organization as
- * its slug, a category term as an array with its `gcid` and `title`. A
+ * its slug, a category term as an array with its `gcid` and `title`, an image
+ * as its public address (or a list of them, or arrays carrying it as `url`). A
  * rich-text (Bard) value may stay as its list of nodes; descriptions read its text.
  */
 final readonly class EntryData
