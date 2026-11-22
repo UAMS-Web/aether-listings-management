@@ -10,6 +10,7 @@ use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Kind;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\ListingIndex;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Mode;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Outcome;
+use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Photo;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Silos;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Sync;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\SyncItem;
@@ -368,6 +369,8 @@ it('writes an outcome as plain data for the log', function (): void {
         'unresolved_categories' => ['Made Up Clinic'],
         'listing_name' => 'locations/1',
         'retryable' => false,
+        'photos' => [],
+        'photos_sent' => [],
     ]);
 });
 
@@ -493,4 +496,176 @@ it('creates a listing with its hours', function (): void {
 
     expect($run['outcomes'][0]->action)->toBe(Action::Create)
         ->and(json_decode((string) $writes[0]['body'], true))->toMatchArray(['regularHours' => syncHours()]);
+});
+
+/**
+ * A location item asking for photos, matching syncListing() otherwise.
+ *
+ * @param  list<Photo>  $photos
+ * @param  array<string, list<string>>  $sent
+ */
+function photoItem(array $photos, array $sent = []): SyncItem
+{
+    return new SyncItem('clinic', Kind::Location, 'main', false, syncFields(), [], [], $photos, $sent);
+}
+
+/**
+ * The logo, the cover and two other photos.
+ *
+ * @return list<Photo>
+ */
+function syncPhotos(): array
+{
+    return [
+        new Photo(Photo::LOGO, 'https://x.test/logo.png'),
+        new Photo(Photo::COVER, 'https://x.test/cover.jpg'),
+        new Photo(Photo::ADDITIONAL, 'https://x.test/one.jpg'),
+        new Photo(Photo::ADDITIONAL, 'https://x.test/two.jpg'),
+    ];
+}
+
+/**
+ * The photos a transport was sent, as category => address pairs, in order.
+ *
+ * @return list<array{0: mixed, 1: mixed}>
+ */
+function photoUploads(FakeTransport $transport): array
+{
+    $uploads = [];
+
+    foreach ($transport->writes() as $request) {
+        if (str_ends_with($request['url'], '/media')) {
+            $body = (array) json_decode((string) $request['body'], true);
+            $uploads[] = [((array) ($body['locationAssociation'] ?? []))['category'] ?? null, $body['sourceUrl'] ?? null];
+        }
+    }
+
+    return $uploads;
+}
+
+it('sends a matching listing only the photos whose addresses it has not been sent, and reports them', function (): void {
+    $run = runSync([photoItem(syncPhotos(), ['locations/1' => ['https://x.test/logo.png', 'https://x.test/one.jpg']])], [syncListing()]);
+    $outcome = $run['outcomes'][0];
+
+    expect(photoUploads($run['transport']))->toBe([['COVER', 'https://x.test/cover.jpg'], ['ADDITIONAL', 'https://x.test/two.jpg']])
+        ->and($run['transport']->writes()[0]['url'])->toBe('https://mybusiness.googleapis.com/v4/accounts/ml/locations/1/media')
+        ->and($outcome->action)->toBe(Action::Update)
+        ->and($outcome->reason)->toBe('Photos sent')
+        ->and($outcome->fields)->toBe([])
+        ->and($outcome->written)->toBeTrue()
+        ->and($outcome->photos)->toBe(['https://x.test/cover.jpg', 'https://x.test/two.jpg'])
+        ->and($outcome->photosSent)->toBe(['https://x.test/cover.jpg', 'https://x.test/two.jpg']);
+});
+
+it('is a no-op, with no call, when every photo was already sent to the listing', function (): void {
+    $run = runSync([photoItem(syncPhotos(), ['locations/1' => Photo::urls(syncPhotos())])], [syncListing()]);
+
+    expect($run['outcomes'][0]->action)->toBe(Action::Noop)
+        ->and($run['transport']->writes())->toBe([]);
+});
+
+it('sends every photo to a listing other than the one the record was made for', function (): void {
+    $run = runSync([photoItem(syncPhotos(), ['locations/9' => Photo::urls(syncPhotos())])], [syncListing()]);
+
+    expect(photoUploads($run['transport']))->toHaveCount(4);
+});
+
+it('sends an address that appears under two categories once, under the first', function (): void {
+    $photos = [new Photo(Photo::COVER, 'https://x.test/same.jpg'), new Photo(Photo::ADDITIONAL, 'https://x.test/same.jpg')];
+
+    expect(photoUploads(runSync([photoItem($photos)], [syncListing()])['transport']))->toBe([['COVER', 'https://x.test/same.jpg']]);
+});
+
+it('writes changed fields and then the new photos, reporting the update', function (): void {
+    $item = new SyncItem('clinic', Kind::Location, 'main', false, syncFields('New'), [], [], [new Photo(Photo::LOGO, 'https://x.test/logo.png')]);
+    $run = runSync([$item], [syncListing()]);
+
+    expect(array_column($run['transport']->writes(), 'method'))->toBe(['PATCH', 'POST'])
+        ->and($run['outcomes'][0]->reason)->toBe('Updated')
+        ->and($run['outcomes'][0]->photosSent)->toBe(['https://x.test/logo.png']);
+});
+
+it('sends a new listing every photo, whatever was recorded, after creating it', function (): void {
+    $router = fn (string $method, string $url): ?HttpResponse => $method === 'POST' && str_contains($url, '/locations?') ? FakeTransport::json(['name' => 'locations/8']) : null;
+    $run = runSync([photoItem(syncPhotos(), ['locations/8' => ['https://x.test/logo.png']])], router: $router);
+    $outcome = $run['outcomes'][0];
+
+    expect(photoUploads($run['transport']))->toHaveCount(4)
+        ->and($run['transport']->writes()[1]['url'])->toBe('https://mybusiness.googleapis.com/v4/accounts/ml/locations/8/media')
+        ->and($outcome->action)->toBe(Action::Create)
+        ->and($outcome->photosSent)->toBe(Photo::urls(syncPhotos()));
+});
+
+it('sends no photo to a new listing Google did not name', function (): void {
+    $run = runSync([photoItem(syncPhotos())]);
+
+    expect(photoUploads($run['transport']))->toBe([])
+        ->and($run['outcomes'][0]->action)->toBe(Action::Create)
+        ->and($run['outcomes'][0]->photosSent)->toBe([]);
+});
+
+it('lists the photos a dry run would send, and sends none', function (bool $listed): void {
+    $run = runSync([photoItem(syncPhotos(), ['locations/1' => ['https://x.test/logo.png']])], $listed ? [syncListing()] : [], ['main' => 'dry-run']);
+    $outcome = $run['outcomes'][0];
+
+    expect($run['transport']->writes())->toBe([])
+        ->and($outcome->photos)->toBe($listed === false ? Photo::urls(syncPhotos()) : ['https://x.test/cover.jpg', 'https://x.test/one.jpg', 'https://x.test/two.jpg'])
+        ->and($outcome->photosSent)->toBe([])
+        ->and($outcome->toArray()['photos'])->toBe($outcome->photos);
+})->with([
+    'an update' => [true],
+    'a create' => [false],
+]);
+
+it('reports a refused photo as an error naming its address, and still sends the ones after it', function (): void {
+    $router = fn (string $method, string $url, ?string $body): ?HttpResponse => str_contains((string) $body, 'one.jpg') ? FakeTransport::json(['error' => ['message' => 'Bad image']], 400) : null;
+    $run = runSync([photoItem(syncPhotos())], [syncListing()], router: $router);
+    $outcome = $run['outcomes'][0];
+
+    expect(photoUploads($run['transport']))->toHaveCount(4)
+        ->and($outcome->action)->toBe(Action::Error)
+        ->and($outcome->reason)->toBe('https://x.test/one.jpg: Google API POST failed (400): Bad image')
+        ->and($outcome->retryable)->toBeFalse()
+        ->and($outcome->written)->toBeTrue()
+        ->and($outcome->listingName)->toBe('locations/1')
+        ->and($outcome->photosSent)->toBe(['https://x.test/logo.png', 'https://x.test/cover.jpg', 'https://x.test/two.jpg']);
+});
+
+it('reports only the first of several refused photos', function (): void {
+    $router = fn (string $method, string $url): ?HttpResponse => str_ends_with($url, '/media') ? FakeTransport::json(['error' => ['message' => 'No']], 400) : null;
+    $outcome = runSync([photoItem(syncPhotos())], [syncListing()], router: $router)['outcomes'][0];
+
+    expect($outcome->reason)->toBe('https://x.test/logo.png: Google API POST failed (400): No')
+        ->and($outcome->written)->toBeFalse()
+        ->and($outcome->photosSent)->toBe([]);
+});
+
+it('ends the sending at a rate limit, retryable, keeping the photos that went', function (bool $daily): void {
+    $message = $daily ? 'Quota exceeded for quota metric requests per day' : 'Slow down';
+    $router = fn (string $method, string $url, ?string $body): ?HttpResponse => str_contains((string) $body, 'cover.jpg') ? FakeTransport::json(['error' => ['message' => $message]], 429) : null;
+    $run = runSync([photoItem(syncPhotos())], [syncListing()], router: $router);
+    $outcome = $run['outcomes'][0];
+
+    expect(photoUploads($run['transport']))->toHaveCount(2)
+        ->and($outcome->action)->toBe(Action::Error)
+        ->and($outcome->reason)->toStartWith('https://x.test/cover.jpg: ')
+        ->and($outcome->retryable)->toBeTrue()
+        ->and($outcome->photosSent)->toBe(['https://x.test/logo.png']);
+})->with([
+    'a per-minute limit' => [false],
+    'a per-day quota' => [true],
+]);
+
+it('keeps a created listing named when a photo is refused', function (): void {
+    $router = fn (string $method, string $url): ?HttpResponse => match (true) {
+        str_ends_with($url, '/media') => FakeTransport::json(['error' => ['message' => 'No']], 400),
+        $method === 'POST' && str_contains($url, '/locations?') => FakeTransport::json(['name' => 'locations/8']),
+        default => null,
+    };
+    $outcome = runSync([photoItem(syncPhotos())], router: $router)['outcomes'][0];
+
+    expect($outcome->action)->toBe(Action::Error)
+        ->and($outcome->listingName)->toBe('locations/8')
+        ->and($outcome->written)->toBeTrue()
+        ->and($outcome->photos)->toBe(Photo::urls(syncPhotos()));
 });

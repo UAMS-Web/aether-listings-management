@@ -6,6 +6,7 @@ use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\ApiException;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Client;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Credentials;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\HttpResponse;
+use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Photo;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\RateLimitedException;
 use UAMSWeb\Aether\People\ListingsManagement\Tests\Support\FakeTransport;
 
@@ -374,4 +375,19 @@ it('reads at most the page limit, and fails past it', function (): void {
 
     expect(fn (): array => clientWith($transport)->categories())->toThrow(ApiException::class, 'Google API GET failed: https://mybusinessbusinessinformation.googleapis.com/v1/categories ran past 1000 pages')
         ->and($transport->apiRequests())->toHaveCount(Client::MAX_PAGES);
+});
+
+it('adds a photo to a listing through the v4 media endpoint, by its address and category', function (): void {
+    $transport = new FakeTransport;
+
+    clientWith($transport)->uploadPhoto('accounts/9', 'locations/3', new Photo(Photo::COVER, 'https://health.example.test/cover.jpg'));
+
+    $request = $transport->apiRequests()[0];
+    expect($request['method'])->toBe('POST')
+        ->and($request['url'])->toBe('https://mybusiness.googleapis.com/v4/accounts/9/locations/3/media')
+        ->and(json_decode((string) $request['body'], true))->toBe([
+            'mediaFormat' => 'PHOTO',
+            'locationAssociation' => ['category' => 'COVER'],
+            'sourceUrl' => 'https://health.example.test/cover.jpg',
+        ]);
 });

@@ -82,6 +82,16 @@ return [
             // The weekly hours rules, and the toggle marking hours that vary (which writes none)
             'regular_hours' => 'regular_hours',
             'hours_variable' => 'hours_variable_query',
+            // Images, each read as its public address: the cover, the other photos, and the
+            // wayfinding photo a provider's listing at the location gets
+            'cover_photo' => 'featured_image',
+            'other_photos' => 'gallery_image',
+            'wayfinding_photo' => 'wayfinding_image',
+            // A child location uses its parent's image of a kind unless both of these are on
+            'photos_override' => 'image_parent_override_query',
+            'cover_photo_override' => 'featured_image_parent_override_query',
+            'other_photos_override' => 'gallery_image_parent_override_query',
+            'wayfinding_photo_override' => 'wayfinding_image_parent_override_query',
             // Radio fields answering true, false or not applicable => Business Profile attribute
             'attributes' => [
                 'google_business_profile_has_wheelchair_accessible_entrance' => 'has_wheelchair_accessible_entrance',
@@ -102,7 +112,11 @@ return [
             'categories' => 'google_business_profile_clinical_category',
             'description' => ['bio_clinical_short', 'bio_clinical'],
             'exclude' => 'google_business_profile_clinical_exclude_query',
+            // The wide portrait, read as its public address, sent as the listing's cover
+            'cover_photo' => 'portrait_wide',
         ],
+        // The public address of the logo every listing gets; empty sends no logo
+        'logo' => '',
 
         // The category a listing gets when its entry chooses none, by Google category ID
         'default_categories' => [

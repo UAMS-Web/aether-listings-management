@@ -5,6 +5,7 @@ declare(strict_types=1);
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\EntryData;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\FieldMapper;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Kind;
+use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Photo;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Silos;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\SyncItem;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Values;
@@ -574,4 +575,103 @@ it('reads hours through the handles the configuration names', function (): void 
 
     expect(mapper(['regular_hours' => 'hours', 'hours_variable' => 'other'])->locationItem($location, mapperSilos())->fields)->toHaveKey('regularHours')
         ->and(mapper(['regular_hours' => 'hours', 'hours_variable' => 'varies'])->locationItem($location, mapperSilos())->fields)->not->toHaveKey('regularHours');
+});
+
+/**
+ * The shipped mapping with a logo configured.
+ */
+function photoMapper(string $logo = 'https://x.test/logo.png'): FieldMapper
+{
+    /** @var array{mapping: array<string, mixed>} $config */
+    $config = require __DIR__.'/../../../config/aether-listings-management.php';
+
+    return new FieldMapper(['logo' => $logo] + $config['mapping']);
+}
+
+/**
+ * Photos as category => address pairs.
+ *
+ * @param  list<Photo>  $photos
+ * @return list<array{0: string, 1: string}>
+ */
+function photoPairs(array $photos): array
+{
+    return array_map(static fn (Photo $photo): array => [$photo->category, $photo->url], $photos);
+}
+
+it('gives a location the logo, its featured image as the cover and its gallery as the other photos', function (): void {
+    $location = locationEntry(values: [
+        'featured_image' => 'https://x.test/featured.jpg',
+        'gallery_image' => ['https://x.test/g1.jpg', ['url' => 'https://x.test/g2.jpg'], '  ', ['url' => '']],
+        'wayfinding_image' => 'https://x.test/way.jpg',
+    ]);
+
+    expect(photoPairs(photoMapper()->locationItem($location, mapperSilos())->photos))->toBe([
+        ['LOGO', 'https://x.test/logo.png'],
+        ['COVER', 'https://x.test/featured.jpg'],
+        ['ADDITIONAL', 'https://x.test/g1.jpg'],
+        ['ADDITIONAL', 'https://x.test/g2.jpg'],
+    ]);
+});
+
+it('sends no logo when none is configured, and nothing for a location with no images', function (): void {
+    expect(mapper()->locationItem(locationEntry(), mapperSilos())->photos)->toBe([])
+        ->and(photoPairs(photoMapper('  ')->locationItem(locationEntry(values: ['featured_image' => ['url' => 'https://x.test/f.jpg']]), mapperSilos())->photos))->toBe([['COVER', 'https://x.test/f.jpg']]);
+});
+
+it('gives a provider with a wide portrait the portrait as the cover and the wayfinding photo as the first other photo', function (): void {
+    $items = photoMapper()->providerItems(personEntry(['portrait_wide' => 'https://x.test/wide.jpg']), [locationEntry(values: ['wayfinding_image' => 'https://x.test/way.jpg', 'gallery_image' => ['https://x.test/g1.jpg']])], mapperSilos());
+
+    expect(photoPairs($items[0]->photos))->toBe([
+        ['LOGO', 'https://x.test/logo.png'],
+        ['COVER', 'https://x.test/wide.jpg'],
+        ['ADDITIONAL', 'https://x.test/way.jpg'],
+    ]);
+});
+
+it('makes the wayfinding photo the cover of a provider with no wide portrait', function (): void {
+    $items = photoMapper()->providerItems(personEntry(), [locationEntry(values: ['wayfinding_image' => ['url' => 'https://x.test/way.jpg']])], mapperSilos());
+
+    expect(photoPairs($items[0]->photos))->toBe([['LOGO', 'https://x.test/logo.png'], ['COVER', 'https://x.test/way.jpg']]);
+});
+
+it('leaves a provider photos unchanged at a location with no wayfinding photo', function (): void {
+    $withPortrait = photoMapper()->providerItems(personEntry(['portrait_wide' => 'https://x.test/wide.jpg']), [locationEntry()], mapperSilos())[0];
+    $without = photoMapper()->providerItems(personEntry(), [locationEntry()], mapperSilos())[0];
+
+    expect(photoPairs($withPortrait->photos))->toBe([['LOGO', 'https://x.test/logo.png'], ['COVER', 'https://x.test/wide.jpg']])
+        ->and(photoPairs($without->photos))->toBe([['LOGO', 'https://x.test/logo.png']]);
+});
+
+it('gives a child location its parent images unless it overrides each kind', function (array $overrides, array $expected): void {
+    $parent = locationEntry('main-clinic', 'Main Clinic', ['featured_image' => 'https://x.test/p-featured.jpg', 'gallery_image' => ['https://x.test/p-g.jpg'], 'wayfinding_image' => 'https://x.test/p-way.jpg']);
+    $child = locationEntry(values: $overrides + ['featured_image' => 'https://x.test/c-featured.jpg', 'gallery_image' => ['https://x.test/c-g.jpg'], 'wayfinding_image' => 'https://x.test/c-way.jpg'], parent: $parent);
+    $mapper = photoMapper('');
+
+    $location = Photo::urls($mapper->locationItem($child, mapperSilos())->photos);
+    $provider = Photo::urls($mapper->providerItems(personEntry(), [$child], mapperSilos())[0]->photos);
+
+    expect([...$location, ...$provider])->toBe($expected);
+})->with([
+    'no override' => [[], ['https://x.test/p-featured.jpg', 'https://x.test/p-g.jpg', 'https://x.test/p-way.jpg']],
+    'kind toggles without the master' => [['featured_image_parent_override_query' => true, 'gallery_image_parent_override_query' => true, 'wayfinding_image_parent_override_query' => true], ['https://x.test/p-featured.jpg', 'https://x.test/p-g.jpg', 'https://x.test/p-way.jpg']],
+    'master without a kind toggle' => [['image_parent_override_query' => true], ['https://x.test/p-featured.jpg', 'https://x.test/p-g.jpg', 'https://x.test/p-way.jpg']],
+    'featured only' => [['image_parent_override_query' => true, 'featured_image_parent_override_query' => true], ['https://x.test/c-featured.jpg', 'https://x.test/p-g.jpg', 'https://x.test/p-way.jpg']],
+    'gallery only' => [['image_parent_override_query' => true, 'gallery_image_parent_override_query' => true], ['https://x.test/p-featured.jpg', 'https://x.test/c-g.jpg', 'https://x.test/p-way.jpg']],
+    'wayfinding only' => [['image_parent_override_query' => true, 'wayfinding_image_parent_override_query' => true], ['https://x.test/p-featured.jpg', 'https://x.test/p-g.jpg', 'https://x.test/c-way.jpg']],
+]);
+
+it('lets a child override remove a parent image by leaving its own empty', function (): void {
+    $parent = locationEntry('main-clinic', 'Main Clinic', ['featured_image' => 'https://x.test/p-featured.jpg']);
+    $child = locationEntry(values: ['image_parent_override_query' => true, 'featured_image_parent_override_query' => true], parent: $parent);
+
+    expect(photoMapper('')->locationItem($child, mapperSilos())->photos)->toBe([]);
+});
+
+it('reads photos through the handles the configuration names', function (): void {
+    $location = locationEntry(values: ['hero' => 'https://x.test/hero.jpg', 'more' => ['https://x.test/m.jpg'], 'directions' => 'https://x.test/d.jpg']);
+    $mapper = mapper(['cover_photo' => 'hero', 'other_photos' => 'more', 'wayfinding_photo' => 'directions'], ['cover_photo' => 'banner']);
+
+    expect(Photo::urls($mapper->locationItem($location, mapperSilos())->photos))->toBe(['https://x.test/hero.jpg', 'https://x.test/m.jpg'])
+        ->and(Photo::urls($mapper->providerItems(personEntry(['banner' => 'https://x.test/b.jpg']), [$location], mapperSilos())[0]->photos))->toBe(['https://x.test/b.jpg', 'https://x.test/d.jpg']);
 });

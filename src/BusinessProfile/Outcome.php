@@ -19,6 +19,8 @@ final readonly class Outcome
      * @param  string  $listingName  The matched or created listing's resource name, when there is one.
      * @param  bool  $retryable  Whether a failure was a rate limit that a later attempt can clear.
      * @param  bool  $written  Whether anything was sent to Google.
+     * @param  list<string>  $photos  The addresses of the photos sent, or that a dry run would send.
+     * @param  list<string>  $photosSent  The addresses Google accepted in this run, for the caller to record against the listing.
      */
     public function __construct(
         public SyncItem $item,
@@ -30,6 +32,8 @@ final readonly class Outcome
         public string $listingName = '',
         public bool $retryable = false,
         public bool $written = false,
+        public array $photos = [],
+        public array $photosSent = [],
     ) {}
 
     /**
@@ -51,7 +55,7 @@ final readonly class Outcome
     /**
      * The outcome as plain data for a log entry.
      *
-     * @return array{store_code: string, kind: string, silo: ?string, mode: string, action: string, reason: string, fields: list<string>, attributes: list<string>, unresolved_categories: list<string>, listing_name: string, retryable: bool}
+     * @return array{store_code: string, kind: string, silo: ?string, mode: string, action: string, reason: string, fields: list<string>, attributes: list<string>, unresolved_categories: list<string>, listing_name: string, retryable: bool, photos: list<string>, photos_sent: list<string>}
      */
     public function toArray(): array
     {
@@ -67,6 +71,8 @@ final readonly class Outcome
             'unresolved_categories' => $this->item->unresolvedCategories,
             'listing_name' => $this->listingName,
             'retryable' => $this->retryable,
+            'photos' => $this->photos,
+            'photos_sent' => $this->photosSent,
         ];
     }
 }
