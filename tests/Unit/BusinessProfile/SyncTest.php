@@ -648,7 +648,7 @@ it('ends the sending at a rate limit, retryable, keeping the photos that went', 
 
     expect(photoUploads($run['transport']))->toHaveCount(2)
         ->and($outcome->action)->toBe(Action::Error)
-        ->and($outcome->reason)->toStartWith('https://x.test/cover.jpg: ')
+        ->and($outcome->reason)->toBe('https://x.test/cover.jpg: Google API POST failed (429): '.$message)
         ->and($outcome->retryable)->toBeTrue()
         ->and($outcome->photosSent)->toBe(['https://x.test/logo.png']);
 })->with([
@@ -679,4 +679,64 @@ it('attaches the sent record to an item without changing anything else', functio
         ->and([$with->storeCode, $with->kind, $with->silo, $with->excluded, $with->fields, $with->attributes, $with->unresolvedCategories, $with->photos])
         ->toBe([$item->storeCode, $item->kind, $item->silo, $item->excluded, $item->fields, $item->attributes, $item->unresolvedCategories, $item->photos])
         ->and($item->photosSentTo('locations/9'))->toBe(['https://x.test/old.jpg']);
+});
+
+it('reports a write when the fields went through and the attributes failed', function (): void {
+    $router = fn (string $method, string $url): ?HttpResponse => $method === 'PATCH' && str_ends_with(explode('?', $url)[0], '/attributes') ? FakeTransport::json(['error' => ['message' => 'Bad attribute']], 400) : null;
+    $item = new SyncItem('clinic', Kind::Location, 'main', false, syncFields('New'), ['has_restroom' => true], [], syncPhotos());
+    $outcome = runSync([$item], [syncListing()], router: $router)['outcomes'][0];
+
+    expect($outcome->action)->toBe(Action::Error)
+        ->and($outcome->written)->toBeTrue()
+        ->and($outcome->photos)->toBe(Photo::urls(syncPhotos()))
+        ->and($outcome->photosSent)->toBe([]);
+});
+
+it('reports no write when the fields themselves were refused, listing the photos it did not send', function (): void {
+    $router = fn (string $method): ?HttpResponse => $method === 'PATCH' ? FakeTransport::json(['error' => ['message' => 'No']], 400) : null;
+    $item = new SyncItem('clinic', Kind::Location, 'main', false, syncFields('New'), [], [], syncPhotos());
+    $run = runSync([$item], [syncListing()], router: $router);
+
+    expect($run['outcomes'][0]->written)->toBeFalse()
+        ->and($run['outcomes'][0]->photos)->toBe(Photo::urls(syncPhotos()))
+        ->and(photoUploads($run['transport']))->toBe([]);
+});
+
+it('reports a write when the fields went through and every photo was refused', function (): void {
+    $router = fn (string $method, string $url): ?HttpResponse => str_ends_with($url, '/media') ? FakeTransport::json(['error' => ['message' => 'No']], 400) : null;
+    $item = new SyncItem('clinic', Kind::Location, 'main', false, syncFields('New'), [], [], syncPhotos());
+
+    expect(runSync([$item], [syncListing()], router: $router)['outcomes'][0]->written)->toBeTrue();
+});
+
+it('lists the photos on a failed create and on a failed attribute write after one', function (bool $createFails): void {
+    $router = fn (string $method, string $url): ?HttpResponse => match (true) {
+        $method === 'POST' && str_contains($url, '/locations?') => $createFails ? FakeTransport::json(['error' => ['message' => 'No']], 500) : FakeTransport::json(['name' => 'locations/8']),
+        $method === 'PATCH' => FakeTransport::json(['error' => ['message' => 'No']], 400),
+        default => null,
+    };
+    $item = new SyncItem('clinic', Kind::Location, 'main', false, syncFields(), ['has_restroom' => true], [], syncPhotos());
+    $run = runSync([$item], router: $router);
+
+    expect($run['outcomes'][0]->action)->toBe(Action::Error)
+        ->and($run['outcomes'][0]->photos)->toBe(Photo::urls(syncPhotos()))
+        ->and(photoUploads($run['transport']))->toBe([]);
+})->with([
+    'the create' => [true],
+    'the attributes after it' => [false],
+]);
+
+it('reports a rate limit over an earlier refusal, and sends nothing after it', function (): void {
+    $router = fn (string $method, string $url, ?string $body): ?HttpResponse => match (true) {
+        str_contains((string) $body, 'logo.png') => FakeTransport::json(['error' => ['message' => 'Bad image']], 400),
+        str_contains((string) $body, 'cover.jpg') => FakeTransport::json(['error' => ['message' => 'Slow down']], 429),
+        default => null,
+    };
+    $run = runSync([photoItem(syncPhotos())], [syncListing()], router: $router);
+    $outcome = $run['outcomes'][0];
+
+    expect(photoUploads($run['transport']))->toHaveCount(2)
+        ->and($outcome->reason)->toBe('https://x.test/cover.jpg: Google API POST failed (429): Slow down')
+        ->and($outcome->retryable)->toBeTrue()
+        ->and($outcome->photosSent)->toBe([]);
 });

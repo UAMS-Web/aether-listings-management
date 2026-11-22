@@ -19,7 +19,7 @@ final readonly class Outcome
      * @param  string  $listingName  The matched or created listing's resource name, when there is one.
      * @param  bool  $retryable  Whether a failure was a rate limit that a later attempt can clear.
      * @param  bool  $written  Whether anything was sent to Google.
-     * @param  list<string>  $photos  The addresses of the photos sent, or that a dry run would send.
+     * @param  list<string>  $photos  The addresses of the photos this run set out to send, or that a dry run would send; `$photosSent` names those that went.
      * @param  list<string>  $photosSent  The addresses Google accepted in this run, for the caller to record against the listing.
      */
     public function __construct(

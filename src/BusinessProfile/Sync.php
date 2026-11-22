@@ -151,16 +151,20 @@ final class Sync
             return new Outcome($item, $mode, Action::Update, 'Dry run, no write made', $fields, $attributeNames, $name, photos: $urls);
         }
 
+        // Whether the fields went through, so a failure writing the attributes after them still reports a write
+        $patched = false;
+
         try {
             if ($changed !== []) {
                 $this->client->patch($name, $changed, ListingDiff::updateMask($changed));
+                $patched = true;
             }
 
             if ($attributes !== []) {
                 $this->client->updateAttributes($name, $attributes);
             }
         } catch (ApiException $apiException) {
-            return $this->failure($item, $mode, $apiException, $name, $fields, $attributeNames, photos: $urls);
+            return $this->failure($item, $mode, $apiException, $name, $fields, $attributeNames, $patched, $urls);
         }
 
         $wrote = $changed !== [] || $attributes !== [];
@@ -233,7 +237,10 @@ final class Sync
      *
      * One refused photo does not stop the ones after it; the first refusal is the
      * one returned, named by its address. A rate limit ends the sending at once,
-     * since every later photo would be refused for the same reason.
+     * since every later photo would be refused for the same reason, and is the
+     * failure returned even after a refusal, so the run is retried; a refused
+     * photo is not recorded as sent, so the next run sends it again and reports
+     * it then. The WordPress sync behaves the same way.
      *
      * @param  string  $account  The account group the listing is in.
      * @param  string  $name  The listing's resource name.
@@ -250,7 +257,7 @@ final class Sync
                 $this->client->uploadPhoto($account, $name, $photo);
                 $sent[] = $photo->url;
             } catch (RateLimitedException $rateLimitedException) {
-                return [$sent, new RateLimitedException($photo->url.': '.$rateLimitedException->getMessage(), $rateLimitedException->daily)];
+                return [$sent, new RateLimitedException($photo->url.': '.$rateLimitedException->getMessage())];
             } catch (ApiException $apiException) {
                 $refused ??= new ApiException($photo->url.': '.$apiException->getMessage());
             }

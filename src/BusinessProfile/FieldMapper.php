@@ -39,7 +39,7 @@ final readonly class FieldMapper
     public const int MAX_ADDITIONAL_CATEGORIES = 9;
 
     /**
-     * @param  array<array-key, mixed>  $config  The add-on's `mapping` setting: `location` and `provider` handles, `default_categories` and `tracking`.
+     * @param  array<array-key, mixed>  $config  The add-on's `mapping` setting: `location` and `provider` handles, `default_categories`, `tracking` and `logo`.
      */
     public function __construct(private array $config) {}
 

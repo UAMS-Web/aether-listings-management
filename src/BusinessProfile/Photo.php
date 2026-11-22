@@ -48,7 +48,7 @@ final readonly class Photo
         foreach ($photos as $photo) {
             if (! isset($seen[$photo->url])) {
                 $pending[] = $photo;
-                $seen[$photo->url] = true;
+                $seen[$photo->url] = $photo;
             }
         }
 
