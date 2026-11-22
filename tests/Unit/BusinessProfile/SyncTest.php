@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Action;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Client;
+use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\CreateQuota;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Credentials;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\HttpResponse;
+use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\InMemoryCreateQuotaStore;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Kind;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\ListingIndex;
 use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Mode;
@@ -63,7 +65,7 @@ function syncItem(string $code = 'clinic', ?string $silo = 'main', array $fields
  * @param  array<array-key, mixed>  $modes
  * @return array{outcomes: list<Outcome>, transport: FakeTransport, log: list<Outcome>}
  */
-function runSync(array $items, array $listings = [], array $modes = ['main' => 'live', 'partner' => 'live'], bool $production = true, ?Closure $router = null, ?string $today = '2026-11-20'): array
+function runSync(array $items, array $listings = [], array $modes = ['main' => 'live', 'partner' => 'live'], bool $production = true, ?Closure $router = null, ?string $today = '2026-11-20', ?CreateQuota $quota = null): array
 {
     $transport = new FakeTransport($router);
     $log = [];
@@ -75,6 +77,7 @@ function runSync(array $items, array $listings = [], array $modes = ['main' => '
             $log[] = $outcome;
         },
         $today,
+        $quota,
     );
 
     return ['outcomes' => $sync->run($items), 'transport' => $transport, 'log' => $log];
@@ -374,6 +377,7 @@ it('writes an outcome as plain data for the log', function (): void {
         'retryable' => false,
         'photos' => [],
         'photos_sent' => [],
+        'resume_at' => null,
     ]);
 });
 
@@ -818,3 +822,144 @@ it('reports a rate limit over an earlier refusal, and sends nothing after it', f
         ->and($outcome->retryable)->toBeTrue()
         ->and($outcome->photosSent)->toBe([]);
 });
+
+/** 12:00 PST on 2026-11-22, when the sync tests run their create quota. */
+const SYNC_TEST_NOW = 1795377600;
+
+/** The next Pacific midnight after SYNC_TEST_NOW. */
+const SYNC_TEST_RESET = 1795420800;
+
+/**
+ * A create quota on a fixed clock.
+ */
+function syncQuota(int $budget = 90, ?InMemoryCreateQuotaStore $store = null, int $now = SYNC_TEST_NOW): CreateQuota
+{
+    return new CreateQuota($store ?? new InMemoryCreateQuotaStore, $budget, fn (): int => $now);
+}
+
+/**
+ * The create requests a run sent.
+ *
+ * @return list<array{method: string, url: string, headers: array<string, string>, body: ?string}>
+ */
+function createRequests(FakeTransport $transport): array
+{
+    return array_values(array_filter($transport->apiRequests(), static fn (array $request): bool => $request['method'] === 'POST' && str_contains($request['url'], '/locations?requestId=')));
+}
+
+it('names the test clock at noon Pacific and its reset at the next Pacific midnight', function (): void {
+    expect(CreateQuota::format(SYNC_TEST_NOW))->toBe('2026-11-22T12:00:00-08:00')
+        ->and(CreateQuota::nextReset(SYNC_TEST_NOW))->toBe(SYNC_TEST_RESET);
+});
+
+it('defers a create Google refuses for the day, holds every create after it, and still updates', function (): void {
+    $message = "Quota exceeded for quota metric 'Create requests' and limit 'Create requests per day'";
+    $router = fn (string $method, string $url): ?HttpResponse => $method === 'POST' && str_contains($url, '/locations?') ? FakeTransport::json(['error' => ['message' => $message]], 429) : null;
+    $store = new InMemoryCreateQuotaStore;
+    $run = runSync([syncItem(code: 'first'), syncItem(code: 'second'), syncItem(fields: syncFields('New'))], [syncListing()], router: $router, quota: syncQuota(store: $store));
+    [$first, $second, $update] = $run['outcomes'];
+
+    expect($first->action)->toBe(Action::Deferred)
+        ->and($first->resumeAt)->toBe(SYNC_TEST_RESET)
+        ->and($first->reason)->toBe('Google API POST failed (429): '.$message.'; creates resume at 2026-11-23T00:00:00-08:00')
+        ->and($first->isSettled())->toBeFalse()
+        ->and($first->retryable)->toBeFalse()
+        ->and($first->written)->toBeFalse()
+        ->and($first->fields)->toBe(array_keys(syncFields()))
+        ->and($first->toArray()['resume_at'])->toBe('2026-11-23T00:00:00-08:00')
+        ->and($second->action)->toBe(Action::Deferred)
+        ->and($second->resumeAt)->toBe(SYNC_TEST_RESET)
+        ->and($second->reason)->toBe("Creates paused by Google's daily create limit; creates resume at 2026-11-23T00:00:00-08:00")
+        ->and($update->action)->toBe(Action::Update)
+        ->and($update->written)->toBeTrue()
+        ->and(createRequests($run['transport']))->toHaveCount(1)
+        ->and($store->pausedUntil())->toBe(SYNC_TEST_RESET);
+});
+
+it('keeps a pause from an earlier run, and creates again once it ends', function (): void {
+    $store = new InMemoryCreateQuotaStore;
+    $store->pauseUntil(SYNC_TEST_RESET);
+
+    $paused = runSync([syncItem()], quota: syncQuota(store: $store));
+    $after = runSync([syncItem()], quota: syncQuota(store: $store, now: SYNC_TEST_RESET));
+
+    expect($paused['outcomes'][0]->action)->toBe(Action::Deferred)
+        ->and(createRequests($paused['transport']))->toBe([])
+        ->and($after['outcomes'][0]->action)->toBe(Action::Create)
+        ->and(createRequests($after['transport']))->toHaveCount(1);
+});
+
+it('reports a per-minute rate limit on a create as a retryable error, and sends the next create', function (): void {
+    $calls = 0;
+    $router = function (string $method, string $url) use (&$calls): ?HttpResponse {
+        if ($method !== 'POST' || ! str_contains($url, '/locations?')) {
+            return null;
+        }
+
+        return ++$calls === 1 ? FakeTransport::json(['error' => ['message' => 'Quota exceeded for quota metric requests per minute']], 429) : null;
+    };
+    $store = new InMemoryCreateQuotaStore;
+    $run = runSync([syncItem(code: 'first'), syncItem(code: 'second')], router: $router, quota: syncQuota(store: $store));
+    [$first, $second] = $run['outcomes'];
+
+    expect($first->action)->toBe(Action::Error)
+        ->and($first->retryable)->toBeTrue()
+        ->and($first->resumeAt)->toBeNull()
+        ->and($first->listingName)->toBe('')
+        ->and($second->action)->toBe(Action::Create)
+        ->and(createRequests($run['transport']))->toHaveCount(2)
+        ->and($store->pausedUntil())->toBe(0)
+        ->and($store->created('2026-11-22'))->toBe(2);
+});
+
+it('stops creating at the daily budget, deferring the rest to Pacific midnight, and goes on the next day', function (): void {
+    $store = new InMemoryCreateQuotaStore;
+    $run = runSync([syncItem(code: 'first'), syncItem(code: 'second'), syncItem(code: 'third')], quota: syncQuota(2, $store));
+    $next = runSync([syncItem(code: 'third')], quota: syncQuota(2, $store, SYNC_TEST_RESET));
+
+    expect(array_map(fn (Outcome $outcome): string => $outcome->action->value, $run['outcomes']))->toBe(['create', 'create', 'deferred'])
+        ->and($run['outcomes'][2]->reason)->toBe('Daily create budget of 2 spent; creates resume at 2026-11-23T00:00:00-08:00')
+        ->and($run['outcomes'][2]->resumeAt)->toBe(SYNC_TEST_RESET)
+        ->and(createRequests($run['transport']))->toHaveCount(2)
+        ->and($next['outcomes'][0]->action)->toBe(Action::Create)
+        ->and($store->created('2026-11-23'))->toBe(1);
+});
+
+it('counts a refused create against the budget, since Google counts the request', function (): void {
+    $store = new InMemoryCreateQuotaStore;
+    runSync([syncItem()], router: fn (string $method, string $url): ?HttpResponse => $method === 'POST' && str_contains($url, '/locations?') ? FakeTransport::json(['error' => ['message' => 'No']], 400) : null, quota: syncQuota(store: $store));
+
+    expect($store->created('2026-11-22'))->toBe(1);
+});
+
+it('neither counts nor holds a dry-run create, or an update', function (): void {
+    $store = new InMemoryCreateQuotaStore;
+    $dry = runSync([syncItem(code: 'first'), syncItem(code: 'second')], modes: ['main' => 'dry-run'], quota: syncQuota(0, $store));
+    $update = runSync([syncItem(fields: syncFields('New'))], [syncListing()], quota: syncQuota(0, $store));
+
+    expect(array_map(fn (Outcome $outcome): string => $outcome->action->value, $dry['outcomes']))->toBe(['create', 'create'])
+        ->and($update['outcomes'][0]->action)->toBe(Action::Update)
+        ->and($store->created('2026-11-22'))->toBe(0);
+});
+
+it('sends a store code over 64 characters to review, naming it and its length, with no call', function (): void {
+    $code = str_repeat('a', 65);
+    $store = new InMemoryCreateQuotaStore;
+    $run = runSync([syncItem(code: $code), syncItem(code: $code, fields: syncFields('New'))], [syncListing(code: $code)], quota: syncQuota(store: $store));
+
+    expect($run['outcomes'][0]->action)->toBe(Action::Review)
+        ->and($run['outcomes'][0]->reason)->toBe('Store code '.$code.' is 65 characters, over the 64 Google allows')
+        ->and($run['outcomes'][1]->action)->toBe(Action::Review)
+        ->and($run['transport']->requests)->toBe([])
+        ->and($store->created('2026-11-22'))->toBe(0);
+});
+
+it('sends a store code of exactly 64 characters, counted in characters rather than bytes', function (string $code): void {
+    $run = runSync([syncItem(code: $code)]);
+
+    expect($run['outcomes'][0]->action)->toBe(Action::Create)
+        ->and(createRequests($run['transport']))->toHaveCount(1);
+})->with([
+    'ASCII' => [str_repeat('a', 64)],
+    'two-byte letters' => [str_repeat('é', 64)],
+]);

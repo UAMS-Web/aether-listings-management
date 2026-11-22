@@ -55,6 +55,14 @@ return [
     'modes' => [],
 
     /*
+    | The most listings created in one Pacific day. Google refuses creates for
+    | the rest of the day once its own limit is used (102 were accepted on
+    | 2026-10-30 before the rest were refused), so this stays below it and a
+    | backlog drains over several days. Updates do not count.
+    */
+    'create_budget' => 90,
+
+    /*
     | How entries are read. Each value is a field handle on the entry; set one to
     | null to leave that field out. A location's address fields are the resolved
     | ones, so a child location inherits its parent's address unless it

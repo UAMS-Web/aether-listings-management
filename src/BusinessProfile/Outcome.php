@@ -21,6 +21,7 @@ final readonly class Outcome
      * @param  bool  $written  Whether anything was sent to Google.
      * @param  list<string>  $photos  The addresses of the photos this run set out to send, or that a dry run would send; `$photosSent` names those that went.
      * @param  list<string>  $photosSent  The addresses Google accepted in this run, for the caller to record against the listing.
+     * @param  ?int  $resumeAt  For a deferred create, the Unix time it may go again.
      */
     public function __construct(
         public SyncItem $item,
@@ -34,6 +35,7 @@ final readonly class Outcome
         public bool $written = false,
         public array $photos = [],
         public array $photosSent = [],
+        public ?int $resumeAt = null,
     ) {}
 
     /**
@@ -41,21 +43,21 @@ final readonly class Outcome
      *
      * A match, a skip and a write that went through are final. A review depends on
      * Google's state, an error may clear, and a dry run wrote nothing, so the next
-     * save has to run again.
+     * save has to run again. A deferred create goes again once its resume time comes.
      */
     public function isSettled(): bool
     {
         return match ($this->action) {
             Action::Noop, Action::Skip => true,
             Action::Update, Action::Create => $this->written,
-            Action::Review, Action::Error => false,
+            Action::Review, Action::Error, Action::Deferred => false,
         };
     }
 
     /**
      * The outcome as plain data for a log entry.
      *
-     * @return array{store_code: string, kind: string, silo: ?string, mode: string, action: string, reason: string, fields: list<string>, attributes: list<string>, unresolved_categories: list<string>, listing_name: string, retryable: bool, photos: list<string>, photos_sent: list<string>}
+     * @return array{store_code: string, kind: string, silo: ?string, mode: string, action: string, reason: string, fields: list<string>, attributes: list<string>, unresolved_categories: list<string>, listing_name: string, retryable: bool, photos: list<string>, photos_sent: list<string>, resume_at: ?string}
      */
     public function toArray(): array
     {
@@ -73,6 +75,7 @@ final readonly class Outcome
             'retryable' => $this->retryable,
             'photos' => $this->photos,
             'photos_sent' => $this->photosSent,
+            'resume_at' => $this->resumeAt === null ? null : CreateQuota::format($this->resumeAt),
         ];
     }
 }
