@@ -549,6 +549,17 @@ it('compares special hours against the real today when none is given', function 
         ->and(runSync([syncItem(fields: $fields)], [$future], today: null)['outcomes'][0]->action)->toBe(Action::Update);
 });
 
+it('compares special hours from the given today, so a date that is past on the real calendar still counts', function (): void {
+    // The 20th is today for the given date and past for every real date after it
+    $fields = syncFields() + ['regularHours' => syncHours(), 'specialHours' => syncClosures(26)];
+    $listing = syncListing(fields: syncFields() + ['regularHours' => syncHours(), 'specialHours' => syncClosures(20, 26)]);
+
+    $outcome = runSync([syncItem(fields: $fields)], [$listing], ['main' => 'dry-run'], today: '2026-11-20')['outcomes'][0];
+
+    expect($outcome->action)->toBe(Action::Update)
+        ->and($outcome->reason)->toBe("Dry run, no write made; replaces the listing's special hours on 2026-11-20");
+});
+
 it('names no replaced dates when only the regular hours change, or when special hours only gain a date', function (): void {
     $fields = syncFields() + ['regularHours' => syncHours(), 'specialHours' => syncClosures(26, 27)];
     $regular = runSync([syncItem(fields: $fields)], [syncListing(fields: syncFields() + ['regularHours' => syncHours(9), 'specialHours' => syncClosures(26, 27)])]);
