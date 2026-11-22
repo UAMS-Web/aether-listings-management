@@ -325,8 +325,10 @@ it('reports a failed create, and a failed attribute read, as errors', function (
 
     expect($create->action)->toBe(Action::Error)
         ->and($create->reason)->toBe('Google API POST failed (500): No')
+        ->and($create->written)->toBeFalse()
         ->and($update->action)->toBe(Action::Error)
         ->and($update->listingName)->toBe('locations/1')
+        ->and($update->written)->toBeFalse()
         ->and($run['transport']->writes())->toHaveCount(1);
 });
 
@@ -719,6 +721,7 @@ it('lists the photos on a failed create and on a failed attribute write after on
     $run = runSync([$item], router: $router);
 
     expect($run['outcomes'][0]->action)->toBe(Action::Error)
+        ->and($run['outcomes'][0]->written)->toBe(! $createFails)
         ->and($run['outcomes'][0]->photos)->toBe(Photo::urls(syncPhotos()))
         ->and(photoUploads($run['transport']))->toBe([]);
 })->with([
