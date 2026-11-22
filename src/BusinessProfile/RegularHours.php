@@ -56,7 +56,7 @@ final class RegularHours
         $week = [];
 
         foreach (self::enabled($rules) as $rule) {
-            if (trim(Values::str($rule['service_mode'] ?? null)) === 'telemedicine') {
+            if (! self::inPerson($rule)) {
                 continue;
             }
 
@@ -107,12 +107,26 @@ final class RegularHours
     }
 
     /**
+     * Whether a rule describes the premises: any service mode but `telemedicine`.
+     *
+     * Shared with SpecialHours, so both read a rule's mode one way.
+     *
+     * @param  array<array-key, mixed>  $rule  One rule.
+     */
+    public static function inPerson(array $rule): bool
+    {
+        return trim(Values::str($rule['service_mode'] ?? null)) !== 'telemedicine';
+    }
+
+    /**
      * The spans a rule opens its days for: [open, close] in minutes, none for a closed rule, or null when it sets nothing.
+     *
+     * Shared with SpecialHours, so a dated rule reads its status and spans as a weekly one does.
      *
      * @param  array<array-key, mixed>  $rule  One rule.
      * @return ?list<array{int, int}>
      */
-    private static function spans(array $rule): ?array
+    public static function spans(array $rule): ?array
     {
         $status = trim(Values::str($rule['status'] ?? null));
 
@@ -144,7 +158,7 @@ final class RegularHours
      * @param  mixed  $days  The rule's `days` value.
      * @return list<string>
      */
-    private static function days(mixed $days): array
+    public static function days(mixed $days): array
     {
         $keys = [];
 
@@ -165,7 +179,7 @@ final class RegularHours
      * @param  mixed  $rows  A replicator value.
      * @return array<int, array<array-key, mixed>>
      */
-    private static function enabled(mixed $rows): array
+    public static function enabled(mixed $rows): array
     {
         return array_filter(Values::arrays($rows), static fn (array $row): bool => ($row['enabled'] ?? true) !== false);
     }

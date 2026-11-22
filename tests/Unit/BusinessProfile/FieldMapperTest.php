@@ -23,7 +23,7 @@ use UAMSWeb\Aether\People\ListingsManagement\BusinessProfile\Values;
  * @param  array<string, mixed>  $location  Location handle overrides.
  * @param  array<string, mixed>  $provider  Provider handle overrides.
  */
-function mapper(array $location = [], array $provider = []): FieldMapper
+function mapper(array $location = [], array $provider = [], ?string $today = null): FieldMapper
 {
     /** @var array{mapping: array{location: array<string, mixed>, provider: array<string, mixed>}} $config */
     $config = require __DIR__.'/../../../config/aether-listings-management.php';
@@ -31,7 +31,7 @@ function mapper(array $location = [], array $provider = []): FieldMapper
     $mapping['location'] = array_replace($mapping['location'], $location);
     $mapping['provider'] = array_replace($mapping['provider'], $provider);
 
-    return new FieldMapper($mapping);
+    return new FieldMapper($mapping, $today);
 }
 
 function mapperSilos(): Silos
@@ -575,6 +575,48 @@ it('reads hours through the handles the configuration names', function (): void 
 
     expect(mapper(['regular_hours' => 'hours', 'hours_variable' => 'other'])->locationItem($location, mapperSilos())->fields)->toHaveKey('regularHours')
         ->and(mapper(['regular_hours' => 'hours', 'hours_variable' => 'varies'])->locationItem($location, mapperSilos())->fields)->not->toHaveKey('regularHours');
+});
+
+/**
+ * A closed Thanksgiving, as the host passes it with the closures merged in.
+ *
+ * @return list<array<string, mixed>>
+ */
+function thanksgiving(): array
+{
+    return [['type' => 'holiday', 'title' => 'Thanksgiving', 'rules' => [['type' => 'rule', 'date' => '2026-11-26', 'service_mode' => 'in_person', 'status' => 'closed']]]];
+}
+
+it('writes a location special hours beside its regular hours, and gives a provider there the same', function (): void {
+    $location = locationEntry(values: ['regular_hours' => weekdayHours(), 'special_hours' => thanksgiving()]);
+    $item = mapper(today: '2026-11-20')->locationItem($location, mapperSilos());
+    $provider = mapper(today: '2026-11-20')->providerItems(personEntry(), [$location], mapperSilos())[0];
+
+    expect($item->fields['specialHours'] ?? null)->toBe(['specialHourPeriods' => [['startDate' => ['year' => 2026, 'month' => 11, 'day' => 26], 'closed' => true]]])
+        ->and($provider->fields['specialHours'] ?? null)->toBe($item->fields['specialHours'] ?? null)
+        ->and(mapper(today: '2026-11-27')->locationItem($location, mapperSilos())->fields['specialHours'] ?? null)->toBe(['specialHourPeriods' => []]);
+});
+
+it('states an empty special hours set for a location with regular hours and none special, so a deleted closure is cleared', function (): void {
+    $item = mapper()->locationItem(locationEntry(values: ['regular_hours' => weekdayHours()]), mapperSilos());
+
+    expect($item->fields['specialHours'] ?? null)->toBe(['specialHourPeriods' => []]);
+});
+
+it('writes no special hours for a location that writes no regular hours', function (array $values): void {
+    $item = mapper(today: '2026-11-20')->locationItem(locationEntry(values: $values + ['special_hours' => thanksgiving()]), mapperSilos());
+
+    expect($item->fields)->not->toHaveKey('specialHours')
+        ->and($item->fields)->not->toHaveKey('regularHours');
+})->with([
+    'no regular hours' => [[]],
+    'variable hours' => [['regular_hours' => weekdayHours(), 'hours_variable_query' => true]],
+]);
+
+it('reads special hours through the handle the configuration names', function (): void {
+    $location = locationEntry(values: ['regular_hours' => weekdayHours(), 'closures' => thanksgiving()]);
+
+    expect(Values::arr(mapper(['special_hours' => 'closures'], today: '2026-11-20')->locationItem($location, mapperSilos())->fields['specialHours'] ?? null)['specialHourPeriods'] ?? null)->toHaveCount(1);
 });
 
 /**
