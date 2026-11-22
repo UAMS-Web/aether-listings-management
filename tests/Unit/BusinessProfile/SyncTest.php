@@ -905,6 +905,7 @@ it('reports a per-minute rate limit on a create as a retryable error, and sends 
     expect($first->action)->toBe(Action::Error)
         ->and($first->retryable)->toBeTrue()
         ->and($first->resumeAt)->toBeNull()
+        ->and($first->listingName)->toBe('')
         ->and($second->action)->toBe(Action::Create)
         ->and(createRequests($run['transport']))->toHaveCount(2)
         ->and($store->pausedUntil())->toBe(0)

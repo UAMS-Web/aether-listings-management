@@ -12,8 +12,8 @@ namespace UAMSWeb\Aether\People\ListingsManagement\BusinessProfile;
  */
 final class InMemoryCreateQuotaStore implements CreateQuotaStore
 {
-    /** The Unix time creates are paused until, or 0. */
-    private int $pausedUntil = 0;
+    /** The Unix time creates are paused until, or null before the first pause. */
+    private ?int $pausedUntil = null;
 
     /** @var array<string, int> Creates sent, keyed by Pacific day. */
     private array $created = [];
@@ -23,7 +23,7 @@ final class InMemoryCreateQuotaStore implements CreateQuotaStore
      */
     public function pausedUntil(): int
     {
-        return $this->pausedUntil;
+        return $this->pausedUntil ?? 0;
     }
 
     /**
