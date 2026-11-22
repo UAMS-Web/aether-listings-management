@@ -45,4 +45,17 @@ final readonly class SyncItem
     {
         return $this->photosSent[$listing] ?? [];
     }
+
+    /**
+     * This item with the photo addresses already sent to each listing.
+     *
+     * The field mapper reads content only, so the caller attaches the record it
+     * keeps from earlier outcomes' `photosSent` before the item is synced.
+     *
+     * @param  array<string, list<string>>  $photosSent  Listing resource name => the photo addresses already sent to that listing.
+     */
+    public function withPhotosSent(array $photosSent): self
+    {
+        return new self($this->storeCode, $this->kind, $this->silo, $this->excluded, $this->fields, $this->attributes, $this->unresolvedCategories, $this->photos, $photosSent);
+    }
 }

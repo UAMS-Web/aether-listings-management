@@ -669,3 +669,14 @@ it('keeps a created listing named when a photo is refused', function (): void {
         ->and($outcome->written)->toBeTrue()
         ->and($outcome->photos)->toBe(Photo::urls(syncPhotos()));
 });
+
+it('attaches the sent record to an item without changing anything else', function (): void {
+    $item = new SyncItem('clinic', Kind::Provider, 'main', true, syncFields(), ['has_restroom' => true], ['Made Up'], syncPhotos(), ['locations/9' => ['https://x.test/old.jpg']]);
+    $with = $item->withPhotosSent(['locations/1' => ['https://x.test/logo.png']]);
+
+    expect($with->photosSentTo('locations/1'))->toBe(['https://x.test/logo.png'])
+        ->and($with->photosSentTo('locations/9'))->toBe([])
+        ->and([$with->storeCode, $with->kind, $with->silo, $with->excluded, $with->fields, $with->attributes, $with->unresolvedCategories, $with->photos])
+        ->toBe([$item->storeCode, $item->kind, $item->silo, $item->excluded, $item->fields, $item->attributes, $item->unresolvedCategories, $item->photos])
+        ->and($item->photosSentTo('locations/9'))->toBe(['https://x.test/old.jpg']);
+});
