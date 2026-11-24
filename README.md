@@ -2,7 +2,9 @@
 
 A Statamic add-on that syncs Google Business Profile listings for UAMS Statamic sites. Its package is `uams-web/aether-listings-management`, and its namespace, `UAMSWeb\Aether\People\ListingsManagement`, nests inside the prefix owned by [`aether-people`](https://github.com/UAMS-Web/aether-people).
 
-This is a skeleton: it holds the service provider, the tooling and the tests, and no listing code yet. The work moves out of the host site under [`UAMS-Web/uams-statamic#419`](https://github.com/UAMS-Web/uams-statamic/issues/419).
+It ships a Business Profile client and sync that decide, for each provider and location entry, whether to update a listing, create one or send it to review, and write only where a silo is live, plus one configuration file. It registers no command, route, tag, permission, Control Panel screen or fieldtype: the host site calls it. The work moves out of the host site under [`UAMS-Web/uams-statamic#419`](https://github.com/UAMS-Web/uams-statamic/issues/419).
+
+The [wiki](https://github.com/UAMS-Web/aether-listings-management/wiki) holds the guides, the configuration reference and troubleshooting.
 
 ## Requirements
 
@@ -17,7 +19,7 @@ This is a skeleton: it holds the service provider, the tooling and the tests, an
 composer require uams-web/aether-listings-management
 ```
 
-The host application discovers the service provider through `extra.laravel.providers`. The add-on's settings, once it has any, publish with:
+The host application discovers the service provider through `extra.laravel.providers`. The add-on's settings publish with:
 
 ```bash
 php artisan vendor:publish --tag=aether-listings-management-config
